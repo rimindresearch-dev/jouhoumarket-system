@@ -1,10 +1,22 @@
 // app/api/cron/generate/route.ts
 import { NextResponse } from 'next/server';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { r2Client } from '../../../../lib/r2';
 import { supabaseAdmin } from '../../../../lib/supabase';
 
 const TOPICS = ['AI Workflows', 'Next.js 16 Tips', 'Cloudflare R2 Setup', 'Supabase Security'];
+
+// Premium high-resolution curated cover arts for technology, finance, and lifestyle themes
+const CURATED_COVERS = [
+  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop', // Fluid Abstract
+  'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?q=80&w=1024&auto=format&fit=crop', // Cyber Neon Art
+  'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?q=80&w=1024&auto=format&fit=crop', // 3D Geometry
+  'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?q=80&w=1024&auto=format&fit=crop', // Digital Wave
+  'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=1024&auto=format&fit=crop', // Cyber Tech Matrix
+  'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?q=80&w=1024&auto=format&fit=crop', // Abstract Paint
+  'https://images.unsplash.com/photo-1614741118887-7a4ee193a5fa?q=80&w=1024&auto=format&fit=crop', // Binary Hacker Code
+  'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?q=80&w=1024&auto=format&fit=crop', // Minimal Tech Mountains
+  'https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=1024&auto=format&fit=crop', // Generative Silk Wave
+  'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?q=80&w=1024&auto=format&fit=crop'  // Deep Tech Matrix
+];
 
 export async function GET(req: Request) {
   try {
@@ -13,7 +25,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 1. Fetch active Google Trends safely
+    // 1. Fetch active Google Trends and filter out already written topics
     let keyword = TOPICS[Math.floor(Math.random() * TOPICS.length)];
     try {
       const rss = await fetch('https://trends.google.com/trending/rss?geo=US', { next: { revalidate: 0 } });
@@ -72,29 +84,8 @@ export async function GET(req: Request) {
     const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', blogData.slug).single();
     if (dupSlug) blogData.slug = blogData.slug + '-' + Math.floor(Math.random() * 1000);
 
-    // 4. Generate Anime Cover & Save to Cloudflare R2 (Outputs exact S3/R2 errors inside JSON response)
-    let coverUrl = '';
-    const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', anime style, vibrant masterpiece, high res') + '?width=1024&height=1024&nologo=true&seed=' + seed;
-
-    try {
-      const imgRes = await fetch(imgUrl);
-      
-      if (imgRes.ok) {
-        const filename = 'blog-covers/' + blogData.slug + '-' + seed + '.webp';
-        await r2Client.send(new PutObjectCommand({ 
-          Bucket: process.env.R2_BUCKET_NAME, 
-          Key: filename, 
-          Body: Buffer.from(await imgRes.arrayBuffer()), 
-          ContentType: 'image/webp' 
-        }));
-        coverUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL + '/' + filename;
-      } else {
-        coverUrl = 'ERROR: Pollinations Image failed with status code ' + imgRes.status;
-      }
-    } catch (imageError: any) { 
-      // Output the exact Cloudflare R2 / AWS S3 client error message directly to the cover_image string [1.1.1]
-      coverUrl = 'ERROR: R2 Upload Failed - ' + (imageError.message || String(imageError));
-    }
+    // 4. Stable cover image selection from curated, gorgeous royalty-free stock art
+    const coverUrl = CURATED_COVERS[seed % CURATED_COVERS.length];
 
     // 5. Find or Create Category
     let catId: string;
