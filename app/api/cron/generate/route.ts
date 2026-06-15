@@ -1,22 +1,10 @@
 // app/api/cron/generate/route.ts
 import { NextResponse } from 'next/server';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { r2Client } from '../../../../lib/r2';
 import { supabaseAdmin } from '../../../../lib/supabase';
 
 const TOPICS = ['AI Workflows', 'Next.js 16 Tips', 'Cloudflare R2 Setup', 'Supabase Security'];
-
-// Premium high-resolution curated cover arts for technology, finance, and lifestyle themes
-const CURATED_COVERS = [
-  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop', // Fluid Abstract
-  'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?q=80&w=1024&auto=format&fit=crop', // Cyber Neon Art
-  'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?q=80&w=1024&auto=format&fit=crop', // 3D Geometry
-  'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?q=80&w=1024&auto=format&fit=crop', // Digital Wave
-  'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=1024&auto=format&fit=crop', // Cyber Tech Matrix
-  'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?q=80&w=1024&auto=format&fit=crop', // Abstract Paint
-  'https://images.unsplash.com/photo-1614741118887-7a4ee193a5fa?q=80&w=1024&auto=format&fit=crop', // Binary Hacker Code
-  'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?q=80&w=1024&auto=format&fit=crop', // Minimal Tech Mountains
-  'https://images.unsplash.com/photo-1541701494587-cb58502866ab?q=80&w=1024&auto=format&fit=crop', // Generative Silk Wave
-  'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?q=80&w=1024&auto=format&fit=crop'  // Deep Tech Matrix
-];
 
 export async function GET(req: Request) {
   try {
@@ -24,6 +12,8 @@ export async function GET(req: Request) {
     if (searchParams.get('secret') !== process.env.SUPABASE_SERVICE_ROLE_KEY || !supabaseAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || '';
 
     // 1. Fetch active Google Trends and filter out already written topics
     let keyword = TOPICS[Math.floor(Math.random() * TOPICS.length)];
@@ -34,6 +24,7 @@ export async function GET(req: Request) {
         const rawTrends = matches.slice(1).map((match) => match[1].trim());
 
         if (rawTrends.length > 0) {
+          // Fetch last 50 slugs from Supabase to prevent same-day duplicates
           const { data: recentPosts } = await supabaseAdmin
             .from('posts')
             .select('slug')
@@ -42,11 +33,13 @@ export async function GET(req: Request) {
           
           const existingSlugs = new Set((recentPosts || []).map((p) => p.slug));
 
+          // Filter out any trends whose slug already exists in recent history
           const unwrittenTrends = rawTrends.filter((trend) => {
             const slug = trend.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
             return !existingSlugs.has(slug);
           });
 
+          // Select from unwritten topics, fallback to raw list only if everything is written
           const finalTrends = unwrittenTrends.length > 0 ? unwrittenTrends : rawTrends;
           keyword = finalTrends[Math.floor(Math.random() * finalTrends.length)];
         }
@@ -54,28 +47,32 @@ export async function GET(req: Request) {
     } catch { console.warn('Using fallback keyword due to RSS fetch failure'); }
 
     const seed = Math.floor(Math.random() * 9999999);
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (process.env.POLLINATIONS_API_KEY) headers['Authorization'] = 'Bearer ' + process.env.POLLINATIONS_API_KEY;
+    const apiHeaders: Record<string, string> = { 
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + pollinationsApiKey
+    };
 
-    // 2. Request Gemini to write a unique long SEO blog post
+    // 2. Request GPT (via gen.pollinations.ai completions endpoint exactly like VIVIDBUY)
     const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (min 600 words)","category":"Technology","tags":["string"],"imagePrompt":"string"}. Output raw JSON only. Seed: ' + seed;
     let blogData: any;
 
-    try {
-      const aiText = await fetch('https://text.pollinations.ai/', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: 'Topic: ' + keyword }], model: 'gemini', jsonMode: true })
-      });
-      if (aiText.ok) {
-        const clean = (await aiText.text()).replace(/```json/g, '').replace(/```/g, '').trim();
-        blogData = JSON.parse(clean);
-      } else {
-        blogData = generateFallbackPayload(keyword);
-      }
-    } catch {
-      blogData = generateFallbackPayload(keyword);
-    }
+    const aiText = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: apiHeaders,
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: sysPrompt },
+          { role: 'user', content: 'Topic: ' + keyword }
+        ],
+        model: 'openai'
+      })
+    });
+
+    if (!aiText.ok) throw new Error('AI Text Generator failed: ' + aiText.statusText);
+    const aiJson = await aiText.json();
+    const rawAiText = aiJson.choices[0].message.content;
+    const clean = rawAiText.replace(/```json/g, '').replace(/```/g, '').trim();
+    blogData = JSON.parse(clean);
 
     // 3. Duplicate Guard: Prevent duplicate posts
     const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', blogData.title).single();
@@ -84,8 +81,34 @@ export async function GET(req: Request) {
     const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', blogData.slug).single();
     if (dupSlug) blogData.slug = blogData.slug + '-' + Math.floor(Math.random() * 1000);
 
-    // 4. Stable cover image selection from curated, gorgeous royalty-free stock art
-    const coverUrl = CURATED_COVERS[seed % CURATED_COVERS.length];
+    // 4. Generate Anime Cover via Flux Engine (Exactly like VIVIDBUY format) & Save to Cloudflare R2
+    let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
+    
+    try {
+      const stylizedPrompt = blogData.imagePrompt + ', anime style, vibrant masterpiece, high res';
+      const encodedPrompt = encodeURIComponent(stylizedPrompt);
+      const imgUrl = 'https://gen.pollinations.ai/image/' + encodedPrompt + '?model=flux&width=1024&height=1024&nologo=true&key=' + pollinationsApiKey + '&seed=' + seed;
+
+      // Double-verification header authentication as designed in VIVIDBUY
+      const imgRes = await fetch(imgUrl, {
+        headers: { 'Authorization': 'Bearer ' + pollinationsApiKey }
+      });
+      
+      if (imgRes.ok) {
+        const filename = 'blog-covers/' + blogData.slug + '-' + seed + '.webp';
+        await r2Client.send(new PutObjectCommand({ 
+          Bucket: process.env.R2_BUCKET_NAME, 
+          Key: filename, 
+          Body: Buffer.from(await imgRes.arrayBuffer()), 
+          ContentType: 'image/webp' 
+        }));
+        coverUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL + '/' + filename;
+      } else {
+        console.warn('Image generation status is not ok:', imgRes.status);
+      }
+    } catch (imageError) {
+      console.warn('Image generation or R2 upload failed. Activating fallback abstract illustration.', imageError);
+    }
 
     // 5. Find or Create Category
     let catId: string;
@@ -127,6 +150,7 @@ export async function GET(req: Request) {
   }
 }
 
+// Programmatic fallback payload generator matching the schema to guarantee 100% system availability
 function generateFallbackPayload(keyword: string) {
   const safeSlug = keyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'trend-topic';
   return {
