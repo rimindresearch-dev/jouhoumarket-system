@@ -18,7 +18,7 @@ export default async function Page() {
         <p style={{ color: '#555', margin: 0, fontSize: '15px', lineHeight: '1.5' }}>Global search trends and breaking stories, analytically curated by Bob.</p>
       </header>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '40px' }}>
         {posts && posts.map((post) => (
           <div key={post.id} style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
             {post.cover_image_url && (
@@ -35,6 +35,11 @@ export default async function Page() {
           </div>
         ))}
       </div>
+
+      {/* Styled Footer containing Privacy Policy link for Google AdSense compliance */}
+      <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px' }}>
+        <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Privacy Policy</Link>
+      </footer>
     </div>
   );
 }
