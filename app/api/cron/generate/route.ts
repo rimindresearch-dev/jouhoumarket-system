@@ -13,6 +13,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || '';
+
     // 1. Fetch active Google Trends and filter out already written topics
     let keyword = TOPICS[Math.floor(Math.random() * TOPICS.length)];
     try {
@@ -85,7 +87,9 @@ export async function GET(req: Request) {
     if (dup) return NextResponse.json({ success: true, message: 'Duplicate post skipped' });
 
     const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', blogData.slug).single();
-    if (dupSlug) blogData.slug = dupSlug.slug + '-' + Math.floor(Math.random() * 1000);
+    
+    // Fixed Type error: Read original blogData.slug instead of non-existent dupSlug.slug
+    if (dupSlug) blogData.slug = blogData.slug + '-' + Math.floor(Math.random() * 1000);
 
     // 4. Generate Anime Cover via FREE API & Save to Cloudflare R2
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
