@@ -36,9 +36,11 @@ export default async function Page() {
         ))}
       </div>
 
-      {/* Styled Footer containing Privacy Policy link for Google AdSense compliance */}
-      <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px' }}>
+      {/* Dual Footer containing both Privacy Policy and Contact links for Google AdSense compliance */}
+      <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px', display: 'flex', justifyContent: 'center', gap: '20px' }}>
         <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Privacy Policy</Link>
+        <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
+        <Link href="/contact" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Contact Us</Link>
       </footer>
     </div>
   );
