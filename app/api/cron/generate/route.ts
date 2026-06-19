@@ -4,144 +4,212 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client } from '../../../../lib/r2';
 import { supabaseAdmin } from '../../../../lib/supabase';
 
-const TOPICS = ['AI Workflows', 'Next.js 16 Tips', 'Cloudflare R2 Setup', 'Supabase Security'];
+interface GeneratedBlogPayload {
+  title: string;
+  slug: string;
+  summary: string;
+  content: string;
+  category: string;
+  tags: string[];
+  imagePrompt: string;
+}
 
-export async function GET(req: Request) {
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    if (searchParams.get('secret') !== process.env.SUPABASE_SERVICE_ROLE_KEY || !supabaseAdmin) {
+    const { searchParams } = new URL(request.url);
+    const cronSecret = searchParams.get('secret');
+    const expectedSecret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (cronSecret !== expectedSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 1. Fetch active Google Trends and filter out already written topics
-    let keyword = TOPICS[Math.floor(Math.random() * TOPICS.length)];
-    try {
-      const rss = await fetch('https://trends.google.com/trending/rss?geo=US', { next: { revalidate: 0 } });
-      if (rss.ok) {
-        const matches = [...(await rss.text()).matchAll(/<title>([^<]+)<\/title>/g)];
-        const rawTrends = matches.slice(1).map((match) => match[1].trim());
+    if (!supabaseAdmin) {
+      return NextResponse.json({ error: 'Supabase admin client not initialized' }, { status: 500 });
+    }
 
-        if (rawTrends.length > 0) {
-          // Fetch last 50 slugs from Supabase to prevent same-day duplicates
-          const { data: recentPosts } = await supabaseAdmin
-            .from('posts')
-            .select('slug')
-            .order('created_at', { ascending: false })
-            .limit(50);
-          
-          const existingSlugs = new Set((recentPosts || []).map((p) => p.slug));
+    const rssUrl = 'https://trends.google.com/trending/rss?geo=US';
+    const rssResponse = await fetch(rssUrl, { next: { revalidate: 0 } });
+    if (!rssResponse.ok) {
+      throw new Error(`Google Trends returned status: ${rssResponse.status}`);
+    }
 
-          // Filter out any trends whose slug already exists in recent history
-          const unwrittenTrends = rawTrends.filter((trend) => {
-            const slug = trend.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-            return !existingSlugs.has(slug);
-          });
+    const rssText = await rssResponse.text();
+    const titleMatches = [...rssText.matchAll(/<title>([^<]+)<\/title>/g)];
+    const rawTrends = titleMatches.slice(1).map((match) => match[1].trim());
 
-          // Select from unwritten topics, fallback to raw list only if everything is written
-          const finalTrends = unwrittenTrends.length > 0 ? unwrittenTrends : rawTrends;
-          keyword = finalTrends[Math.floor(Math.random() * finalTrends.length)];
-        }
-      }
-    } catch { console.warn('Using fallback keyword due to RSS fetch failure'); }
+    if (rawTrends.length === 0) {
+      throw new Error('No trends found in RSS body');
+    }
 
-    const seed = Math.floor(Math.random() * 9999999);
+    const randomIndex = Math.floor(Math.random() * rawTrends.length);
+    const selectedKeyword = rawTrends[randomIndex];
 
-    // 2. Request Gemini with STRICT journalistic writing guidelines for Bob [1.1.1, 1.1.7]
-    const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"Technology","tags":["string"],"imagePrompt":"string"}. ' +
-      'STRICT JOURNALISTIC RULES FOR BOB: You are Bob, a highly respected global trend journalist. Your article MUST follow this structure: ' +
-      '1) Introduction: Thoroughly explain WHO or WHAT the subject is in detail. No vague statements. ' +
-      '2) The Catalyst: Detail exactly WHY this topic is trending right now (the recent news, viral event, or trigger). ' +
-      '3) Deep Dive: Provide analytical context, historical background, and second-order implications in Bob\'s distinct intellectual voice. ' +
-      '4) Future Outlook: Conclude with Bob\'s distinctive forward-looking prediction. ' +
-      'STRICT LANGUAGE RULE: Generate the entire response strictly in 100% fluent English. If the keyword is in Arabic, Spanish, or Japanese, translate and write strictly in English. Output raw JSON only. Seed: ' + seed;
+    const apiHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (process.env.POLLINATIONS_API_KEY) {
+      apiHeaders['Authorization'] = `Bearer ${process.env.POLLINATIONS_API_KEY}`;
+    }
 
-    const userPrompt = 'Generate a unique, masterpiece article about: "' + keyword + '". Verification Seed: ' + seed;
+    const systemPrompt = `You are an elite automated blog writer. Write a comprehensive, SEO-friendly blog post based on the keyword.
+Return ONLY a valid JSON object matching this schema:
+{
+  "title": "string",
+  "slug": "url-friendly-slug-lowercase",
+  "summary": "captivating and professional short summary",
+  "content": "extremely detailed blog post in rich Markdown, minimum 600 words",
+  "category": "Technology" | "Lifestyle" | "Finance",
+  "tags": ["tag1", "tag2"],
+  "imagePrompt": "vivid descriptive scene description for the post header"
+}
+Rules: Return raw JSON only. Do not wrap in markdown or markdown JSON blocks.`;
 
-    // Call free Gemini anonymously for ultra-fast, 100% stable execution
-    const aiText = await fetch('https://text.pollinations.ai/', {
+    const userPrompt = `Generate a unique, masterpiece article about: "${selectedKeyword}".`;
+
+    const aiTextResponse = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders,
       body: JSON.stringify({
         messages: [
-          { role: 'system', content: sysPrompt },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        model: 'gemini',
-        jsonMode: true
+        model: 'openai'
       })
     });
 
-    if (!aiText.ok) throw new Error('AI Text Generator failed: ' + aiText.statusText);
-    
-    const rawJsonText = await aiText.text();
-    // Robust JSON extraction: Find the first '{' and the last '}' to ignore any surrounding conversational text
-    const startIndex = rawJsonText.indexOf('{');
-    const endIndex = rawJsonText.lastIndexOf('}');
-    if (startIndex === -1 || endIndex === -1) throw new Error('No valid JSON found');
-    const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
-    const blogData = JSON.parse(cleanJson);
-
-    // 3. Duplicate Guard: Prevent duplicate posts
-    const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', blogData.title).single();
-    if (dup) return NextResponse.json({ success: true, message: 'Duplicate post skipped' });
-
-    const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', blogData.slug).single();
-    if (dupSlug) blogData.slug = blogData.slug + '-' + Math.floor(Math.random() * 1000);
-
-    // 4. Generate Anime Cover via FREE API & Save to Cloudflare R2
-    let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
-    try {
-      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', anime style, vibrant masterpiece, high res') + '?width=1024&height=1024&nologo=true&seed=' + seed;
-      const imgRes = await fetch(imgUrl);
-      
-      if (imgRes.ok) {
-        const filename = 'blog-covers/' + blogData.slug + '-' + seed + '.webp';
-        await r2Client.send(new PutObjectCommand({ 
-          Bucket: process.env.R2_BUCKET_NAME, 
-          Key: filename, 
-          Body: Buffer.from(await imgRes.arrayBuffer()), 
-          ContentType: 'image/webp' 
-        }));
-        coverUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL + '/' + filename;
-      }
-    } catch { console.warn('Using fallback image'); }
-
-    // 5. Find or Create Category
-    let catId: string;
-    const catSlug = blogData.category.toLowerCase();
-    const { data: existingCat } = await supabaseAdmin.from('categories').select('id').eq('slug', catSlug).single();
-    if (existingCat) {
-      catId = existingCat.id;
-    } else {
-      const { data: newCategory, error: catError } = await supabaseAdmin.from('categories').insert({ name: blogData.category, slug: catSlug }).select('id').single();
-      if (catError) throw catError;
-      catId = newCategory.id;
+    if (!aiTextResponse.ok) {
+      throw new Error(`AI Text Generator failed: ${aiTextResponse.statusText}`);
     }
 
-    // 6. Save real post metadata to Supabase
-    const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
-      title: blogData.title, slug: blogData.slug, summary: blogData.summary, content: blogData.content, cover_image_url: coverUrl, category_id: catId, status: 'published', published_at: new Date().toISOString()
-    }).select('id').single();
+    const rawJsonText = await aiTextResponse.text();
+    const cleanJson = rawJsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+    const blogData: GeneratedBlogPayload = JSON.parse(cleanJson);
+
+    const { data: existingPost } = await supabaseAdmin
+      .from('posts')
+      .select('id')
+      .eq('slug', blogData.slug)
+      .single();
+
+    if (existingPost) {
+      blogData.slug = `${blogData.slug}-${Math.floor(Math.random() * 1000)}`;
+    }
+
+    const stylizedPrompt = `${blogData.imagePrompt}, vibrant anime illustration style, highly detailed digital art, masterfully colored, aesthetic lighting, high resolution, clean lines`;
+    const imageGenerationSeed = Math.floor(Math.random() * 9999999);
+    const encodedPrompt = encodeURIComponent(stylizedPrompt);
+    const imageUrl = `https://gen.pollinations.ai/image/${encodedPrompt}?model=flux&width=1024&height=1024&nologo=true&seed=${imageGenerationSeed}&key=${process.env.POLLINATIONS_API_KEY}`;
+
+    const imageFetchOptions: RequestInit = { next: { revalidate: 0 } };
+    if (process.env.POLLINATIONS_API_KEY) {
+      imageFetchOptions.headers = {
+        'Authorization': 'Bearer ' + process.env.POLLINATIONS_API_KEY
+      };
+    }
+
+    const imageResponse = await fetch(imageUrl, imageFetchOptions);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to generate cover illustration: ${imageResponse.statusText}`);
+    }
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const filename = `blog-covers/${blogData.slug}-${imageGenerationSeed}.webp`;
+
+    await r2Client.send(
+      new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: filename,
+        Body: Buffer.from(imageBuffer),
+        ContentType: 'image/webp',
+      })
+    );
+
+    const publicCoverImageUrl = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${filename}`;
+
+    let categoryId: string;
+    const categorySlug = blogData.category.toLowerCase();
+    
+    const { data: existingCategory } = await supabaseAdmin
+      .from('categories')
+      .select('id')
+      .eq('slug', categorySlug)
+      .single();
+
+    if (existingCategory) {
+      categoryId = existingCategory.id;
+    } else {
+      const { data: newCategory, error: catError } = await supabaseAdmin
+        .from('categories')
+        .insert({ name: blogData.category, slug: categorySlug })
+        .select('id')
+        .single();
+
+      if (catError) throw catError;
+      categoryId = newCategory.id;
+    }
+
+    const { data: insertedPost, error: postError } = await supabaseAdmin
+      .from('posts')
+      .insert({
+        title: blogData.title,
+        slug: blogData.slug,
+        summary: blogData.summary,
+        content: blogData.content,
+        cover_image_url: publicCoverImageUrl,
+        category_id: categoryId,
+        status: 'published',
+        published_at: new Date().toISOString()
+      })
+      .select('id')
+      .single();
+
     if (postError) throw postError;
 
-    // 7. Save and link tags
-    await Promise.all(blogData.tags.map(async (t: string) => {
-      const tSlug = t.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      let tId: string;
-      const { data: extTag } = await supabaseAdmin.from('tags').select('id').eq('slug', tSlug).single();
-      if (extTag) {
-        tId = extTag.id;
-      } else {
-        const { data: nTag, error: tErr } = await supabaseAdmin.from('tags').insert({ name: t, slug: tSlug }).select('id').single();
-        if (tErr) throw tErr;
-        tId = nTag.id;
-      }
-      await supabaseAdmin.from('post_tags').insert({ post_id: newPost.id, tag_id: tId });
-    }));
+    const tagPromises = blogData.tags.map(async (tagName) => {
+      const tagSlug = tagName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      let tagId: string;
 
-    return NextResponse.json({ success: true, data: { keyword, title: blogData.title, slug: blogData.slug, cover_image: coverUrl } });
-  } catch (err: any) {
-    console.error(err);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+      const { data: existingTag } = await supabaseAdmin
+        .from('tags')
+        .select('id')
+        .eq('slug', tagSlug)
+        .single();
+
+      if (existingTag) {
+        tagId = existingTag.id;
+      } else {
+        const { data: newTag, error: tagError } = await supabaseAdmin
+          .from('tags')
+          .insert({ name: tagName, slug: tagSlug })
+          .select('id')
+          .single();
+
+        if (tagError) throw tagError;
+        tagId = newTag.id;
+      }
+
+      await supabaseAdmin
+        .from('post_tags')
+        .insert({ post_id: insertedPost.id, tag_id: tagId });
+    });
+
+    await Promise.all(tagPromises);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Blog post generated and published successfully',
+      data: {
+        keyword: selectedKeyword,
+        title: blogData.title,
+        slug: blogData.slug,
+        cover_image: publicCoverImageUrl,
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Autopilot generation error:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal Server Error' },
+      { status: 500 }
+    );
   }
 }
