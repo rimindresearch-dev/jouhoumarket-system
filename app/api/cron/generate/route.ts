@@ -13,8 +13,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || '';
-
     // 1. Fetch active Google Trends and filter out already written topics
     let keyword = TOPICS[Math.floor(Math.random() * TOPICS.length)];
     try {
@@ -24,7 +22,6 @@ export async function GET(req: Request) {
         const rawTrends = matches.slice(1).map((match) => match[1].trim());
 
         if (rawTrends.length > 0) {
-          // Fetch last 50 slugs from Supabase to prevent same-day duplicates
           const { data: recentPosts } = await supabaseAdmin
             .from('posts')
             .select('slug')
@@ -33,13 +30,11 @@ export async function GET(req: Request) {
           
           const existingSlugs = new Set((recentPosts || []).map((p) => p.slug));
 
-          // Filter out any trends whose slug already exists in recent history
           const unwrittenTrends = rawTrends.filter((trend) => {
             const slug = trend.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
             return !existingSlugs.has(slug);
           });
 
-          // Select from unwritten topics, fallback to raw list only if everything is written
           const finalTrends = unwrittenTrends.length > 0 ? unwrittenTrends : rawTrends;
           keyword = finalTrends[Math.floor(Math.random() * finalTrends.length)];
         }
@@ -50,7 +45,7 @@ export async function GET(req: Request) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (process.env.POLLINATIONS_API_KEY) headers['Authorization'] = 'Bearer ' + process.env.POLLINATIONS_API_KEY;
 
-    // 2. Request Gemini with STRICT journalistic writing guidelines for Bob [1.1.1, 1.1.7]
+    // 2. Request Gemini to write a unique long SEO blog post strictly in English
     const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"Technology","tags":["string"],"imagePrompt":"string"}. ' +
       'STRICT JOURNALISTIC RULES FOR BOB: You are Bob, a highly respected global trend journalist. Your article MUST follow this structure: ' +
       '1) Introduction: Thoroughly explain WHO or WHAT the subject is in detail. No vague statements. ' +
@@ -71,13 +66,18 @@ export async function GET(req: Request) {
             { role: 'system', content: sysPrompt },
             { role: 'user', content: userPrompt }
           ],
-          model: 'gemini', // Stable high-speed Gemini
+          model: 'gemini',
           jsonMode: true
         })
       });
       if (aiText.ok) {
-        const clean = (await aiText.text()).replace(/```json/g, '').replace(/```/g, '').trim();
-        blogData = JSON.parse(clean);
+        const rawJsonText = await aiText.text();
+        // Robust JSON extraction: Find the first '{' and the last '}' to ignore any surrounding conversational text
+        const startIndex = rawJsonText.indexOf('{');
+        const endIndex = rawJsonText.lastIndexOf('}');
+        if (startIndex === -1 || endIndex === -1) throw new Error('No valid JSON found');
+        const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
+        blogData = JSON.parse(cleanJson);
       } else {
         console.warn('Text API returned error status. Activating programmatic fallback payload.');
         blogData = generateFallbackPayload(keyword);
