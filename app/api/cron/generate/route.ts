@@ -50,9 +50,14 @@ export async function GET(req: Request) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (process.env.POLLINATIONS_API_KEY) headers['Authorization'] = 'Bearer ' + process.env.POLLINATIONS_API_KEY;
 
-    // 2. Request Gemini (via text.pollinations.ai for ultra-fast <2s response to prevent Vercel 10s timeouts)
+    // 2. Request Gemini with STRICT journalistic writing guidelines for Bob [1.1.1, 1.1.7]
     const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"Technology","tags":["string"],"imagePrompt":"string"}. ' +
-      'STRICT MULTILINGUAL TRANSLATION RULE: You MUST write the title, summary, content, and tags strictly in 100% fluent English. Even if the input topic/keyword is in Arabic, Spanish, Japanese, or any other language, translate it and write the entire response strictly in English. Output raw JSON only. Seed: ' + seed;
+      'STRICT JOURNALISTIC RULES FOR BOB: You are Bob, a highly respected global trend journalist. Your article MUST follow this structure: ' +
+      '1) Introduction: Thoroughly explain WHO or WHAT the subject is in detail. No vague statements. ' +
+      '2) The Catalyst: Detail exactly WHY this topic is trending right now (the recent news, viral event, or trigger). ' +
+      '3) Deep Dive: Provide analytical context, historical background, and second-order implications in Bob\'s distinct intellectual voice. ' +
+      '4) Future Outlook: Conclude with Bob\'s distinctive forward-looking prediction. ' +
+      'STRICT LANGUAGE RULE: Generate the entire response strictly in 100% fluent English. If the keyword is in Arabic, Spanish, or Japanese, translate and write strictly in English. Output raw JSON only. Seed: ' + seed;
 
     const userPrompt = 'Generate a unique, masterpiece article about: "' + keyword + '". Verification Seed: ' + seed;
     let blogData: any;
@@ -66,7 +71,7 @@ export async function GET(req: Request) {
             { role: 'system', content: sysPrompt },
             { role: 'user', content: userPrompt }
           ],
-          model: 'gemini', // Using Gemini for high-speed execution under 2 seconds to avoid Vercel timeouts
+          model: 'gemini', // Stable high-speed Gemini
           jsonMode: true
         })
       });
@@ -74,11 +79,11 @@ export async function GET(req: Request) {
         const clean = (await aiText.text()).replace(/```json/g, '').replace(/```/g, '').trim();
         blogData = JSON.parse(clean);
       } else {
-        console.warn('Text API returned error status. Activating dynamic fallback payload.');
+        console.warn('Text API returned error status. Activating programmatic fallback payload.');
         blogData = generateFallbackPayload(keyword);
       }
-    } catch {
-      console.warn('Text API fetch failed. Activating dynamic fallback payload.');
+    } catch (apiError) {
+      console.warn('Text API fetch failed. Activating programmatic fallback payload.', apiError);
       blogData = generateFallbackPayload(keyword);
     }
 
@@ -151,7 +156,6 @@ export async function GET(req: Request) {
 function generateFallbackPayload(keyword: string) {
   const safeSlug = keyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'trend-topic';
   
-  // 5 distinct headline formulas for absolute uniqueness
   const titles = [
     'The Ultimate Insight into ' + keyword + ': Trends and Future Impact',
     'Why ' + keyword + ' is Trending Globally and What It Means for You',
@@ -160,7 +164,6 @@ function generateFallbackPayload(keyword: string) {
     'Decoding ' + keyword + ': Key Industry Shifts and Market Predictions'
   ];
 
-  // 4 distinct summary formulas
   const summaries = [
     'An in-depth analysis of why ' + keyword + ' is capturing global search interest and shaping modern technology landscapes.',
     'Discover the key drivers behind the sudden rise of ' + keyword + ' and how it is redefining current digital ecosystems.',
@@ -168,7 +171,6 @@ function generateFallbackPayload(keyword: string) {
     'Everything you need to know about ' + keyword + ' today, compiled with strategic insights and analytical predictions.'
   ];
 
-  // Stable random selection based on keyword length to ensure different styles for different topics
   const hash = keyword.length;
   const selectedTitle = titles[hash % titles.length];
   const selectedSummary = summaries[hash % summaries.length];
