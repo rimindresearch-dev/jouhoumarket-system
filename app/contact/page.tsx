@@ -16,7 +16,12 @@ export default function ContactPage() {
         <a href="mailto:takahiro999q@gmail.com" style={{ fontSize: '18px', color: '#0070f3', textDecoration: 'none', fontWeight: 'bold' }}>takahiro999q@gmail.com</a>
       </div>
 
-      <p style={{ fontSize: '14px', color: '#666' }}>We usually respond to all legitimate inquiries within 2-3 business days.</p>
+      <p style={{ fontSize: '14px', color: '#666', marginBottom: '40px' }}>We usually respond to all legitimate inquiries within 2-3 business days.</p>
+
+      {/* Back to Home Button */}
+      <div style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center' }}>
+        <Link href="/" style={{ color: '#0070f3', textDecoration: 'none', fontSize: '18px', fontWeight: 'bold' }}>← Back to Home</Link>
+      </div>
     </div>
   );
 }
