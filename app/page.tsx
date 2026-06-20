@@ -22,7 +22,11 @@ export default async function Page() {
         {posts && posts.map((post) => (
           <div key={post.id} style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
             {post.cover_image_url && (
-              <img src={post.cover_image_url} alt="" style={{ width: '120px', height: '80px', objectFit: 'cover', borderRadius: '4px' }} />
+              <img 
+                src={post.cover_image_url} 
+                alt="" 
+                style={{ width: '120px', height: '80px', objectFit: 'cover', borderRadius: '4px' }} 
+              />
             )}
             <div>
               <h2 style={{ fontSize: '18px', margin: '0 0 5px' }}>
@@ -36,7 +40,7 @@ export default async function Page() {
         ))}
       </div>
 
-      {/* Dual Footer containing both Privacy Policy and Contact links for Google AdSense compliance */}
+      {/* Styled Footer containing both Privacy Policy and Contact links for Google AdSense compliance */}
       <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px', display: 'flex', justifyContent: 'center', gap: '20px' }}>
         <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Privacy Policy</Link>
         <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
