@@ -70,12 +70,12 @@ export default async function Page({ searchParams }: PageProps) {
                   />
                 )}
                 <div style={{ flex: 1 }}>
-                  <h2 style={{ fontSize: '17px', margin: '0 0 5px', lineHeight: '1.4', fontWeight: 'bold' }}>
+                  <h2 style={{ fontSize: '18px', margin: '0 0 5px', lineHeight: '1.4', fontWeight: 'bold' }}>
                     <Link href={'/posts/' + post.slug} style={{ color: '#0070f3', textDecoration: 'none' }}>
                       {post.title}
                     </Link>
                   </h2>
-                  <p style={{ color: '#666', fontSize: '13px', margin: 0, lineHeight: '1.4' }}>{post.summary}</p>
+                  <p style={{ color: '#666', fontSize: '14px', margin: 0, lineHeight: '1.4' }}>{post.summary}</p>
                 </div>
               </div>
             ))}
@@ -133,10 +133,16 @@ export default async function Page({ searchParams }: PageProps) {
 
       </div>
 
-      <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px', display: 'flex', justifyContent: 'center', gap: '20px' }}>
-        <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Privacy Policy</Link>
-        <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
-        <Link href="/contact" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Contact Us</Link>
+      {/* Styled Footer containing Privacy Policy, Contact links, and Dynamic Copyright */}
+      <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginBottom: '10px' }}>
+          <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Privacy Policy</Link>
+          <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
+          <Link href="/contact" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Contact Us</Link>
+        </div>
+        <p style={{ color: '#999', fontSize: '12px', margin: 0 }}>
+          © {new Date().getFullYear()} Bob's Daily Insights. All rights reserved.
+        </p>
       </footer>
     </div>
   );

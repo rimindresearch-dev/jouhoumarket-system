@@ -53,7 +53,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
         </span>
       )}
 
-      <h1 style={{ fontSize: '32px', marginBottom: '10px', marginTop: '10px', lineHeight: '1.3', fontWeight: 'bold' }}>{post.title}</h1>
+      <h1 style={{ fontSize: '32px', marginBottom: '10px', lineHeight: '1.3', fontWeight: 'bold' }}>{post.title}</h1>
       
       <p style={{ color: '#999', fontSize: '13px', margin: '5px 0 20px' }}>
         Published: {publishDate} {publishDate !== updateDate ? ` | Updated: ${updateDate}` : ''}
@@ -88,9 +88,17 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
         <div style={{ margin: '30px 0', textAlign: 'center' }} dangerouslySetInnerHTML={{ __html: adDetail }} />
       )}
 
-      <div style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center' }}>
-        <Link href="/" style={{ color: '#0070f3', textDecoration: 'none', fontSize: '18px', fontWeight: 'bold' }}>← Back to Home</Link>
-      </div>
+      {/* Styled Footer containing Privacy Policy, Contact links, and Dynamic Copyright */}
+      <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginBottom: '10px' }}>
+          <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Privacy Policy</Link>
+          <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
+          <Link href="/contact" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Contact Us</Link>
+        </div>
+        <p style={{ color: '#999', fontSize: '12px', margin: 0 }}>
+          © {new Date().getFullYear()} Bob's Daily Insights. All rights reserved.
+        </p>
+      </footer>
     </div>
   );
 }
