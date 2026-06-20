@@ -13,10 +13,19 @@ export default async function Page() {
 
   return (
     <div style={{ maxWidth: '600px', margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif' }}>
-      <header style={{ borderBottom: '2px solid #eee', paddingBottom: '20px', marginBottom: '40px' }}>
-        <span style={{ fontSize: '11px', color: '#e11d48', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Journalist Column</span>
-        <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#111', margin: '5px 0' }}>Bob's Daily Insights</h1>
-        <p style={{ color: '#555', margin: 0, fontSize: '15px', lineHeight: '1.5' }}>Global search trends and breaking stories, analytically curated by Bob.</p>
+      
+      {/* Editorial Header with Bob's Circular Journalist Avatar */}
+      <header style={{ borderBottom: '2px solid #eee', paddingBottom: '20px', marginBottom: '40px', display: 'flex', gap: '20px', alignItems: 'center' }}>
+        <img 
+          src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop" 
+          alt="Bob" 
+          style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #eee', flexShrink: 0 }} 
+        />
+        <div>
+          <span style={{ fontSize: '11px', color: '#e11d48', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Journalist Column</span>
+          <h1 style={{ fontSize: '30px', fontWeight: 'bold', color: '#111', margin: '2px 0 4px' }}>Bob's Daily Insights</h1>
+          <p style={{ color: '#555', margin: 0, fontSize: '14px', lineHeight: '1.4' }}>Global search trends and breaking stories, analytically curated by Bob.</p>
+        </div>
       </header>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '40px' }}>
