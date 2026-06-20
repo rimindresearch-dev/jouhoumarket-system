@@ -1,4 +1,5 @@
 ﻿// app/page.tsx
+import React from 'react';
 import Link from 'next/link';
 import { supabase } from '../lib/supabase';
 
@@ -19,28 +20,39 @@ export default async function Page() {
       </header>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '40px' }}>
-        {posts && posts.map((post) => (
-          <div key={post.id} style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-            {post.cover_image_url && (
-              <img 
-                src={post.cover_image_url} 
-                alt="" 
-                style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '8px' }} 
-              />
-            )}
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontSize: '18px', margin: '0 0 5px', lineHeight: '1.4' }}>
-                <Link href={'/posts/' + post.slug} style={{ color: '#0070f3', textDecoration: 'none' }}>
-                  {post.title}
-                </Link>
-              </h2>
-              <p style={{ color: '#666', fontSize: '14px', margin: 0, lineHeight: '1.4' }}>{post.summary}</p>
+        {posts && posts.map((post, idx) => (
+          <React.Fragment key={post.id}>
+            <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+              {post.cover_image_url && (
+                <img 
+                  src={post.cover_image_url} 
+                  alt="" 
+                  style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '8px' }} 
+                />
+              )}
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: '18px', margin: '0 0 5px', lineHeight: '1.4' }}>
+                  <Link href={'/posts/' + post.slug} style={{ color: '#0070f3', textDecoration: 'none' }}>
+                    {post.title}
+                  </Link>
+                </h2>
+                <p style={{ color: '#666', fontSize: '14px', margin: 0, lineHeight: '1.4' }}>{post.summary}</p>
+              </div>
             </div>
-          </div>
+            
+            {/* Elegant In-Feed Native Ad Slot displayed after the 2nd article */}
+            {idx === 1 && (
+              <div style={{ margin: '20px 0', padding: '15px', backgroundColor: '#fafafa', border: '1px dashed #ddd', borderRadius: '6px', textAlign: 'center' }}>
+                <span style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '10px' }}>Advertisement</span>
+                <div style={{ minHeight: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: '13px', fontStyle: 'italic' }}>
+                  Sponsored Content
+                </div>
+              </div>
+            )}
+          </React.Fragment>
         ))}
       </div>
 
-      {/* Styled Footer containing both Privacy Policy and Contact links for Google AdSense compliance */}
       <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px', display: 'flex', justifyContent: 'center', gap: '20px' }}>
         <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Privacy Policy</Link>
         <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
