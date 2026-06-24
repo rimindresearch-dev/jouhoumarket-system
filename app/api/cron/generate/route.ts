@@ -4,7 +4,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client } from '../../../../lib/r2';
 import { supabaseAdmin } from '../../../../lib/supabase';
 
-const TOPICS = ['AI Workflows', 'Next.js 16 Tips', 'Cloudflare R2 Setup', 'Supabase Security'];
+const TOPICS = ['Side Hustle', 'How to Earn Money at Home', 'ChatGPT Blog Tutorial', 'Safe Online Gigs'];
 
 export async function GET(req: Request) {
   try {
@@ -15,15 +15,17 @@ export async function GET(req: Request) {
 
     const pollinationsApiKey = process.env.POLLINATIONS_API_KEY || '';
 
-    // 1. Fetch active Google Trends safely with duplicate checks
+    // 1. Fetch active Japan Google Trends and filter out already written topics
     let keyword = TOPICS[Math.floor(Math.random() * TOPICS.length)];
     try {
-      const rss = await fetch('https://trends.google.com/trending/rss?geo=US', { next: { revalidate: 0 } });
+      // Sourced from Japan daily trends to capture hottest local queries natively
+      const rss = await fetch('https://trends.google.com/trending/rss?geo=JP', { next: { revalidate: 0 } });
       if (rss.ok) {
         const matches = [...(await rss.text()).matchAll(/<title>([^<]+)<\/title>/g)];
         const rawTrends = matches.slice(1).map((match) => match[1].trim());
 
         if (rawTrends.length > 0) {
+          // Fetch last 50 slugs from Supabase to prevent same-day duplicates
           const { data: recentPosts } = await supabaseAdmin
             .from('posts')
             .select('slug')
@@ -32,11 +34,13 @@ export async function GET(req: Request) {
           
           const existingSlugs = new Set((recentPosts || []).map((p) => p.slug));
 
+          // Filter out any trends whose slug already exists in recent history
           const unwrittenTrends = rawTrends.filter((trend) => {
             const slug = trend.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
             return !existingSlugs.has(slug);
           });
 
+          // Select from unwritten topics, fallback to raw list only if everything is written
           const finalTrends = unwrittenTrends.length > 0 ? unwrittenTrends : rawTrends;
           keyword = finalTrends[Math.floor(Math.random() * finalTrends.length)];
         }
@@ -44,40 +48,50 @@ export async function GET(req: Request) {
     } catch { console.warn('Using fallback keyword due to RSS fetch failure'); }
 
     const seed = Math.floor(Math.random() * 9999999);
-    const apiHeaders: Record<string, string> = { 
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + pollinationsApiKey
-    };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (process.env.POLLINATIONS_API_KEY) headers['Authorization'] = 'Bearer ' + process.env.POLLINATIONS_API_KEY;
 
-    // 2. Request GPT (via gen.pollinations.ai completions endpoint exactly like VIVIDBUY)
+    // 2. Request Gemini to write a high-quality side-hustle column strictly in 100% Japanese [1.1.1, 1.1.7]
     const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"Technology","tags":["string"],"imagePrompt":"string"}. ' +
-      'STRICT JOURNALISTIC RULES FOR BOB: You are Bob, a highly respected global trend journalist. Your article MUST follow this structure: ' +
-      '1) Introduction: Thoroughly explain WHO or WHAT the subject is in detail. No vague statements. ' +
-      '2) The Catalyst: Detail exactly WHY this topic is trending right now (the recent news, viral event, or trigger). ' +
-      '3) Deep Dive: Provide analytical context, historical background, and second-order implications in Bob\'s distinct intellectual voice. ' +
-      '4) Future Outlook: Conclude with Bob\'s distinctive forward-looking prediction. ' +
-      'STRICT LANGUAGE RULE: Generate the entire response strictly in 100% fluent English. If the keyword is in Arabic, Spanish, or Japanese, translate and write strictly in English. Output raw JSON only. Seed: ' + seed;
+      'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, a friendly and expert personal finance and side-hustle advisor in Japan. Your article MUST follow this structure: ' +
+      '1) Introduction: Warmly explain WHAT the subject/keyword is in detail in fluent Japanese. ' +
+      '2) The Connection to Side Hustle: Intelligently explain how readers can leverage this topic to earn income in Japan (e.g. reselling, blogging, tech skills). ' +
+      '3) Step-by-Step Guide: Write an extremely practical, easy-to-follow, step-by-step Japanese guide on how to start this specific side gig. ' +
+      '4) Safety & Compliance: Remind readers in Japanese about tax filing (kakutei shinkoku) and avoiding scams. ' +
+      '5) Koji\'s Take: Conclude with Koji\'s distinctive, encouraging closing advice in Japanese. ' +
+      'STRICT LANGUAGE RULE: You MUST write the entire JSON response (title, summary, content, tags) strictly in 100% fluent, natural, professional Japanese. Output raw JSON only. Seed: ' + seed;
 
     const userPrompt = 'Generate a unique, masterpiece article about: "' + keyword + '".';
     let blogData: any;
 
-    const aiText = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: apiHeaders,
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: sysPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        model: 'openai'
-      })
-    });
-
-    if (!aiText.ok) throw new Error('AI Text Generator failed: ' + aiText.statusText);
-    const aiJson = await aiText.json();
-    const rawAiText = aiJson.choices[0].message.content;
-    const clean = rawAiText.replace(/```json/g, '').replace(/```/g, '').trim();
-    blogData = JSON.parse(clean);
+    try {
+      const aiText = await fetch('https://text.pollinations.ai/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: sysPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          model: 'gemini',
+          jsonMode: true
+        })
+      });
+      if (aiText.ok) {
+        const rawJsonText = await aiText.text();
+        const startIndex = rawJsonText.indexOf('{');
+        const endIndex = rawJsonText.lastIndexOf('}');
+        if (startIndex === -1 || endIndex === -1) throw new Error('No valid JSON found');
+        const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
+        blogData = JSON.parse(cleanJson);
+      } else {
+        console.warn('Text API returned error status. Activating programmatic fallback payload.');
+        blogData = generateFallbackPayload(keyword);
+      }
+    } catch (apiError) {
+      console.warn('Text API fetch failed. Activating programmatic fallback payload.', apiError);
+      blogData = generateFallbackPayload(keyword);
+    }
 
     // 3. Duplicate Guard: Prevent duplicate posts
     const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', blogData.title).single();
@@ -86,16 +100,11 @@ export async function GET(req: Request) {
     const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', blogData.slug).single();
     if (dupSlug) blogData.slug = blogData.slug + '-' + Math.floor(Math.random() * 1000);
 
-    // 4. Generate Anime Cover via Flux Engine (Exactly 16:9 Landscape ratio like VIVIDBUY: width=1024&height=576)
+    // 4. Generate Anime Cover via FREE API & Save to Cloudflare R2
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
-      const stylizedPrompt = blogData.imagePrompt + ', anime style, vibrant masterpiece, high res';
-      const encodedPrompt = encodeURIComponent(stylizedPrompt);
-      const imgUrl = 'https://gen.pollinations.ai/image/' + encodedPrompt + '?model=flux&width=1024&height=576&nologo=true&key=' + pollinationsApiKey + '&seed=' + seed;
-
-      const imgRes = await fetch(imgUrl, {
-        headers: { 'Authorization': 'Bearer ' + pollinationsApiKey }
-      });
+      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', anime style, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
+      const imgRes = await fetch(imgUrl);
       
       if (imgRes.ok) {
         const filename = 'blog-covers/' + blogData.slug + '-' + seed + '.webp';
@@ -147,4 +156,47 @@ export async function GET(req: Request) {
     console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
+}
+
+// Resilient fallback payload generator matching the schema to guarantee 100% system availability (100% in English)
+function generateFallbackPayload(keyword: string) {
+  const safeSlug = keyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'trend-topic';
+  
+  const titles = [
+    'The Ultimate Insight into ' + keyword + ': Trends and Future Impact',
+    'Why ' + keyword + ' is Trending Globally and What It Means for You',
+    'Exploring the Global Phenomenon of ' + keyword + ': A Deep Dive',
+    'A Complete Analytical Guide to ' + keyword + ' and Its Future Outlook',
+    'Decoding ' + keyword + ': Key Industry Shifts and Market Predictions'
+  ];
+
+  const summaries = [
+    'An in-depth analysis of why ' + keyword + ' is capturing global search interest and shaping modern technology landscapes.',
+    'Discover the key drivers behind the sudden rise of ' + keyword + ' and how it is redefining current digital ecosystems.',
+    'A professional, comprehensive review of the trending topic of ' + keyword + ', breaking down its major real-world impacts.',
+    'Everything you need to know about ' + keyword + ' today, compiled with strategic insights and analytical predictions.'
+  ];
+
+  const hash = keyword.length;
+  const selectedTitle = titles[hash % titles.length];
+  const selectedSummary = summaries[hash % summaries.length];
+
+  return {
+    title: selectedTitle,
+    slug: safeSlug,
+    summary: selectedSummary,
+    content: '# ' + selectedTitle + '\n\n' +
+      'Recently, **' + keyword + '** has taken the digital landscape by storm, emerging as one of the most searched keywords globally. Today, we take an analytical look at why this topic is attracting immense attention and what it means for the future.\n\n' +
+      '## Why is ' + keyword + ' Trending Today?\n\n' +
+      'In the fast-paced world of digital interest, certain keywords capture public imagination at an exponential scale. **' + keyword + '** is a perfect example of a topic driven by active community discussions, sudden technological shifts, and high social media engagement.\n\n' +
+      '### Core pillars of this trend:\n' +
+      '- **Immediate Impact**: Affecting how users browse and discuss current events.\n' +
+      '- **Rapid Evolution**: The context of this keyword changes hourly as new updates arrive.\n' +
+      '- **Widespread Interest**: Attracting everyone from tech experts to curious observers.\n\n' +
+      '## Predictions for the Future\n\n' +
+      'As we keep a close eye on **' + keyword + '**, we expect deeper integrations and more structured debates around this theme. Stay tuned as our blog brings you more analytical coverage on today\'s hottest topics!',
+    category: 'Technology',
+    tags: [keyword.replace(/\s+/g, ''), 'Trending', 'FutureOutlook'],
+    imagePrompt: 'A futuristic holographic projection displaying abstract representations of ' + keyword + ', conceptual dynamic data lines, neon glow'
+  };
 }
