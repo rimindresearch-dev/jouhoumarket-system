@@ -27,7 +27,6 @@ export default async function Page({ searchParams }: PageProps) {
   const count = postsRes.count;
   const ads = adsRes.data;
 
-  // Extract dynamic AdSense codes or keep placeholders
   const adHomepage = ads?.find(s => s.key === 'ad_code_homepage')?.value || '';
   const adSidebar = ads?.find(s => s.key === 'ad_code_sidebar')?.value || '';
 
@@ -38,66 +37,80 @@ export default async function Page({ searchParams }: PageProps) {
   return (
     <div style={{ maxWidth: '950px', margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif' }}>
       
-      {/* Editorial Header with Bob's Circular Journalist Avatar */}
+      {/* Japanese Editorial Header with Koji's Circular Avatar */}
       <header style={{ borderBottom: '2px solid #eee', paddingBottom: '20px', marginBottom: '40px', display: 'flex', gap: '20px', alignItems: 'center' }}>
         <img 
           src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop" 
-          alt="Bob" 
+          alt="Koji" 
           style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #eee', flexShrink: 0 }} 
         />
         <div>
-          <span style={{ fontSize: '11px', color: '#e11d48', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Journalist Column</span>
-          <h1 style={{ fontSize: '30px', fontWeight: 'bold', color: '#111', margin: '2px 0 4px' }}>Bob's Daily Insights</h1>
-          <p style={{ color: '#555', margin: 0, fontSize: '14px', lineHeight: '1.4' }}>Global search trends and breaking stories, analytically curated by Bob.</p>
+          <span style={{ fontSize: '11px', color: '#e11d48', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>副業・在宅コラム</span>
+          <h1 style={{ fontSize: '30px', fontWeight: 'bold', color: '#111', margin: '2px 0 4px' }}>情報マーケット</h1>
+          <p style={{ color: '#555', margin: 0, fontSize: '14px', lineHeight: '1.4' }}>副業、在宅ワーク、安全な稼ぎ方を、アドバイザーのコウジが厳選して届けるお宝情報コラムサイト。</p>
         </div>
       </header>
 
-      {/* Responsive Two-Column Layout (Main Content + Sidebar) */}
+      {/* Responsive Two-Column Layout */}
       <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
         
-        {/* Main Column (Left side) - Takes 60% of desktop space */}
+        {/* Main Column (Left side) */}
         <div style={{ flex: '1 1 500px', minWidth: '300px' }}>
-          
-          {/* Articles list (Without in-feed ads to ensure smooth reading) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {posts && posts.map((post) => (
-              <div key={post.id} style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                {post.cover_image_url && (
-                  <img 
-                    src={post.cover_image_url} 
-                    alt="" 
-                    style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} 
-                  />
-                )}
-                <div style={{ flex: 1 }}>
-                  <h2 style={{ fontSize: '17px', margin: '0 0 5px', lineHeight: '1.4', fontWeight: 'bold' }}>
-                    <Link href={'/posts/' + post.slug} style={{ color: '#0070f3', textDecoration: 'none' }}>
-                      {post.title}
-                    </Link>
-                  </h2>
-                  <p style={{ color: '#666', fontSize: '14px', margin: 0, lineHeight: '1.4' }}>{post.summary}</p>
+            {posts && posts.map((post, idx) => (
+              <React.Fragment key={post.id}>
+                <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                  {post.cover_image_url && (
+                    <img 
+                      src={post.cover_image_url} 
+                      alt="" 
+                      style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} 
+                    />
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <h2 style={{ fontSize: '17px', margin: '0 0 5px', lineHeight: '1.4', fontWeight: 'bold' }}>
+                      <Link href={'/posts/' + post.slug} style={{ color: '#0070f3', textDecoration: 'none' }}>
+                        {post.title}
+                      </Link>
+                    </h2>
+                    <p style={{ color: '#666', fontSize: '13px', margin: 0, lineHeight: '1.4' }}>{post.summary}</p>
+                  </div>
                 </div>
-              </div>
+                
+                {/* Dynamic In-Feed Ad Slot after the 2nd article */}
+                {idx === 1 && (
+                  adHomepage.includes('<!--') ? (
+                    <div style={{ margin: '15px 0', padding: '15px', backgroundColor: '#fafafa', border: '1px dashed #ddd', borderRadius: '6px', textAlign: 'center' }}>
+                      <span style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '5px' }}>広告スペース (In-Feed Advertisement)</span>
+                      <div style={{ minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: '13px', fontStyle: 'italic' }}>
+                        AdSense Ads Space
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ margin: '15px 0', textAlign: 'center' }} dangerouslySetInnerHTML={{ __html: adHomepage }} />
+                  )
+                )}
+              </React.Fragment>
             ))}
           </div>
 
           {/* Styled Pagination Navigation */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '40px', borderTop: '1px solid #eee', paddingTop: '20px', marginBottom: '30px' }}>
             {hasPrev ? (
-              <Link href={'/?page=' + (currentPage - 1)} style={{ color: '#0070f3', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }}>← Previous</Link>
+              <Link href={'/?page=' + (currentPage - 1)} style={{ color: '#0070f3', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }}>← 前のページ</Link>
             ) : <div />}
-            <span style={{ color: '#999', fontSize: '13px' }}>Page {currentPage} of {totalPages}</span>
+            <span style={{ color: '#999', fontSize: '13px' }}>ページ {currentPage} / {totalPages}</span>
             {hasNext ? (
-              <Link href={'/?page=' + (currentPage + 1)} style={{ color: '#0070f3', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }}>Next →</Link>
+              <Link href={'/?page=' + (currentPage + 1)} style={{ color: '#0070f3', textDecoration: 'none', fontWeight: 'bold', fontSize: '14px' }}>次のページ →</Link>
             ) : <div />}
           </div>
 
-          {/* Dynamic Article List Bottom Ad Slot - Positioned safely at the very end of the list */}
+          {/* Dynamic Article List Bottom Ad Slot */}
           {adHomepage.includes('<!--') ? (
             <div style={{ margin: '30px 0', padding: '15px', backgroundColor: '#fafafa', border: '1px dashed #ddd', borderRadius: '6px', textAlign: 'center' }}>
-              <span style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '10px' }}>List Bottom Advertisement</span>
+              <span style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '10px' }}>広告スペース (List Bottom Advertisement)</span>
               <div style={{ minHeight: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: '13px', fontStyle: 'italic' }}>
-                Sponsored Content Space
+                AdSense Ads Space
               </div>
             </div>
           ) : (
@@ -108,11 +121,11 @@ export default async function Page({ searchParams }: PageProps) {
         {/* Sidebar Column (Right side) */}
         <aside style={{ flex: '1 1 250px', maxWidth: '320px', minWidth: '250px' }}>
           
-          {/* Author Card */}
+          {/* Author Card in Japanese */}
           <div style={{ backgroundColor: '#fafafa', borderRadius: '8px', padding: '20px', border: '1px solid #f0f0f0', marginBottom: '25px' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 10px', borderBottom: '2px solid #eee', paddingBottom: '6px' }}>About Journalist Bob</h3>
-            <p style={{ color: '#555', margin: 0, fontSize: '14px', lineHeight: '1.4' }}>
-              Bob is a veteran global trend analyst and independent tech journalist. He curates daily breaking search patterns and turns complex data streams into comprehensive, readable human stories.
+            <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 10px', borderBottom: '2px solid #eee', paddingBottom: '6px' }}>副業アドバイザー コウジ</h3>
+            <p style={{ color: '#555', margin: 0, fontSize: '13px', lineHeight: '1.5' }}>
+              コウジは、15年のキャリアを持つ個人財務プランナー兼副業専門ライターです。日々急上昇する検索トレンドや、本当に安全に稼げる最新の在宅ワーク情報を分析し、初心者向けに分かりやすく解説するコラムをお届けしています。
             </p>
           </div>
 
@@ -120,9 +133,9 @@ export default async function Page({ searchParams }: PageProps) {
           <div style={{ position: 'sticky', top: '20px' }}>
             {adSidebar.includes('<!--') ? (
               <div style={{ padding: '15px', backgroundColor: '#fafafa', border: '1px dashed #ddd', borderRadius: '6px', textAlign: 'center' }}>
-                <span style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '10px' }}>Sidebar Advertisement</span>
+                <span style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '10px' }}>広告スペース (Sidebar Advertisement)</span>
                 <div style={{ minHeight: '250px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: '13px', fontStyle: 'italic' }}>
-                  Aged Domain Ad Banner Space
+                  AdSense Ads Space
                 </div>
               </div>
             ) : (
@@ -133,17 +146,16 @@ export default async function Page({ searchParams }: PageProps) {
 
       </div>
 
-      {/* Styled Footer containing Privacy Policy, Contact links, About Bob, and Copyright */}
       <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px' }}>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginBottom: '10px' }}>
-          <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Privacy Policy</Link>
+          <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>プライバシーポリシー</Link>
           <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
-          <Link href="/contact" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Contact Us</Link>
+          <Link href="/contact" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>お問い合わせ</Link>
           <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
-          <Link href="/about" style={{ color: '#0070f3', textDecoration: 'none', fontSize: '14px', fontWeight: 'bold' }}>About Us</Link>
+          <Link href="/about" style={{ color: '#0070f3', textDecoration: 'none', fontSize: '14px', fontWeight: 'bold' }}>運営者情報</Link>
         </div>
         <p style={{ color: '#999', fontSize: '12px', margin: 0 }}>
-          © {new Date().getFullYear()} Bob's Daily Insights. All rights reserved.
+          © {new Date().getFullYear()} 情報マーケット. All rights reserved.
         </p>
       </footer>
     </div>
