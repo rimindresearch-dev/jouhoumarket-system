@@ -1,71 +1,153 @@
 ﻿// app/admin/page.tsx
 'use client';
-import { useState } from 'react';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
 
-const FALLBACK = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
-
 export default function AdminPage() {
-  const [password, setPassword] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [posts, setPosts] = useState<any[]>([]);
+  const [secret, setSecret] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  async function handleLogin() {
-    // Standard secure client-side password verification (Matches VIVIDBUY credentials)
-    if (password === 'admin') {
-      setIsAuthenticated(true);
-      fetchPosts();
-    } else {
-      alert('Invalid password');
+  // 記事一覧を取得
+  async function fetchPosts() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('posts')
+      .select('*')
+      .order('published_at', { ascending: false });
+    
+    if (!error && data) {
+      setPosts(data);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    fetchPosts();
+  }, []);
+
+  // 削除ボタンクリック時の処理
+  async function handleDelete(postId: string, title: string) {
+    if (!secret) {
+      alert('エラー：管理者シークレットキー（SUPABASE_SERVICE_ROLE_KEY）を入力してください。');
+      return;
+    }
+
+    if (!confirm(`本当に「${title}」を削除しますか？この操作は取り消せません。`)) {
+      return;
+    }
+
+    setActionLoading(postId);
+
+    try {
+      const res = await fetch('/api/admin/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, secret })
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        alert('記事を削除しました。');
+        fetchPosts(); // リストを再読込
+      } else {
+        alert('削除に失敗しました: ' + (result.error || '不明なエラー'));
+      }
+    } catch (err: any) {
+      alert('エラーが発生しました: ' + err.message);
+    } finally {
+      setActionLoading(null);
     }
   }
 
-  async function fetchPosts() {
-    const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
-    setPosts(data || []);
-  }
-
-  async function handleDeletePost(id: string) {
-    if (!confirm('Are you sure you want to delete this post?')) return;
-    await supabase.from('posts').delete().eq('id', id);
-    fetchPosts();
-  }
-
-  async function handleResetImage(id: string) {
-    if (!confirm('Are you sure you want to reset this cover image to the fallback?')) return;
-    await supabase.from('posts').update({ cover_image_url: FALLBACK }).eq('id', id);
-    fetchPosts();
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div style={{ maxWidth: '400px', margin: '100px auto', padding: '25px', fontFamily: 'sans-serif', border: '1px solid #ccc', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '15px' }}>Admin Login</h2>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter admin password" style={{ width: '100%', padding: '10px', marginBottom: '15px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '16px' }} />
-        <button onClick={handleLogin} style={{ width: '100%', padding: '10px', backgroundColor: '#0070f3', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}>Login</button>
-      </div>
-    );
-  }
-
   return (
-    <div style={{ maxWidth: '600px', margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif' }}>
-      <header style={{ borderBottom: '2px solid #eee', paddingBottom: '10px', marginBottom: '30px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 'bold' }}>Blog Curation Admin</h1>
+    <div style={{ maxWidth: '900px', margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif', color: '#333' }}>
+      <header style={{ borderBottom: '2px solid #eee', paddingBottom: '20px', marginBottom: '30px' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: 0 }}>情報マーケット 管理用ダッシュボード</h1>
+        <p style={{ color: '#666', margin: '5px 0 0' }}>不要な自動生成記事の管理および削除を行えます。</p>
       </header>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {posts.map((post) => (
-          <div key={post.id} style={{ display: 'flex', gap: '15px', paddingBottom: '20px', borderBottom: '1px solid #eee', alignItems: 'center' }}>
-            <img src={post.cover_image_url} alt="" style={{ width: '100px', height: '70px', objectFit: 'cover', borderRadius: '4px' }} />
-            <div style={{ flex: 1 }}>
-              <h3 style={{ fontSize: '16px', margin: '0 0 8px', fontWeight: 'bold' }}>{post.title}</h3>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => handleResetImage(post.id)} style={{ padding: '6px 12px', backgroundColor: '#eab308', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>Reset Image</button>
-                <button onClick={() => handleDeletePost(post.id)} style={{ padding: '6px 12px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>Delete Post</button>
-              </div>
-            </div>
-          </div>
-        ))}
+
+      {/* Security Input Card */}
+      <div style={{ backgroundColor: '#fafafa', borderRadius: '8px', padding: '20px', border: '1px solid #eee', marginBottom: '30px' }}>
+        <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#444', display: 'block', marginBottom: '8px' }}>
+          管理者シークレットキーを入力してください（SUPABASE_SERVICE_ROLE_KEY）：
+        </label>
+        <input 
+          type="password" 
+          placeholder="ey..." 
+          value={secret} 
+          onChange={(e) => setSecret(e.target.value)} 
+          style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '14px' }}
+        />
+        <p style={{ color: '#888', fontSize: '12px', margin: '6px 0 0' }}>
+          ※お使いの .env.local にある `SUPABASE_SERVICE_ROLE_KEY` を入力することで、安全に削除処理をキックできます。
+        </p>
       </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+        <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>公開済みの記事一覧 ({posts.length}件)</h2>
+        <button 
+          onClick={fetchPosts} 
+          style={{ padding: '8px 15px', backgroundColor: '#eee', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
+        >
+          一覧を更新
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>記事一覧を読み込み中...</div>
+      ) : posts.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '40px', color: '#999', border: '1px dashed #ccc', borderRadius: '8px' }}>
+          公開中の記事はありません。
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          {posts.map((post) => (
+            <div 
+              key={post.id} 
+              style={{ display: 'flex', gap: '20px', alignItems: 'center', padding: '15px', border: '1px solid #eee', borderRadius: '8px', backgroundColor: '#fff' }}
+            >
+              {post.cover_image_url && (
+                <img 
+                  src={post.cover_image_url} 
+                  alt="" 
+                  style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, backgroundColor: '#f5f5f5' }} 
+                />
+              )}
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: '16px', margin: '0 0 5px', fontWeight: 'bold' }}>{post.title}</h3>
+                <p style={{ color: '#888', fontSize: '12px', margin: 0 }}>
+                  公開日: {new Date(post.published_at).toLocaleString('ja-JP')} | スラッグ: {post.slug}
+                </p>
+              </div>
+              <button 
+                onClick={() => handleDelete(post.id, post.title)}
+                disabled={actionLoading === post.id}
+                style={{ 
+                  padding: '8px 16px', 
+                  backgroundColor: actionLoading === post.id ? '#ccc' : '#e11d48', 
+                  color: '#fff', 
+                  border: 'none', 
+                  borderRadius: '4px', 
+                  cursor: 'pointer', 
+                  fontWeight: 'bold', 
+                  fontSize: '13px' 
+                }}
+              >
+                {actionLoading === post.id ? '削除中...' : '削除'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <footer style={{ marginTop: '40px', borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center' }}>
+        <Link href="/" style={{ color: '#0070f3', textDecoration: 'none', fontWeight: 'bold' }}>← ブログトップへ戻る</Link>
+      </footer>
     </div>
   );
 }

@@ -1,104 +1,148 @@
 ﻿// app/posts/[slug]/page.tsx
-import { notFound } from 'next/navigation';
+import React from 'react';
 import Link from 'next/link';
-import { supabase } from '../../../lib/supabase';
+import { notFound } from 'next/navigation';
+import { supabase } from '../../../lib/supabase'; // パスが異なる場合は適宜調整してください
 
-export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
+export const revalidate = 0;
 
-  // Retrieve post and ad settings concurrently
-  const [postRes, adsRes] = await Promise.all([
-    supabase.from('posts').select('*, categories(name), post_tags(tags(name))').eq('slug', slug).single(),
-    supabase.from('settings').select('*')
+interface PostPageProps {
+  params: Promise<{ slug: string }>;
+}
+
+// 外部ライブラリ不要で、マークダウンを美しいHTML装飾に変換する軽量パーサー関数
+function renderMarkdownToHtml(markdown: string) {
+  if (!markdown) return '';
+  let html = markdown;
+
+  // 1. 各種見出し（### , ## , # ）を美しい日本語ブログ用のデザインに変換
+  html = html.replace(/^### (.*?)$/gm, '<h3 style="font-size: 20px; font-weight: bold; border-left: 4px solid #0070f3; padding-left: 12px; margin: 35px 0 15px; color: #111; letter-spacing: 0.05em;">$1</h3>');
+  html = html.replace(/^## (.*?)$/gm, '<h2 style="font-size: 24px; font-weight: bold; border-bottom: 2px solid #eee; padding-bottom: 8px; margin: 40px 0 20px; color: #111;">$1</h2>');
+  html = html.replace(/^# (.*?)$/gm, '<h1 style="font-size: 28px; font-weight: bold; margin: 40px 0 20px; color: #111;">$1</h1>');
+
+  // 2. 太字（**テキスト**）を強調タグに変換
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight: bold; color: #000; background: linear-gradient(transparent 70%, #fff3b0 70%); padding: 0 2px;">$1</strong>');
+
+  // 3. 区切り線（---）を上品なデザインに変換
+  html = html.replace(/^---$/gm, '<hr style="border: 0; border-top: 1px solid #eaeaea; margin: 35px 0;" />');
+
+  // 4. リスト（箇条書き・番号付き）を変換
+  html = html.replace(/^\d+\.\s(.*)$/gm, '<li style="margin-left: 20px; list-style-type: decimal; margin-bottom: 10px; padding-left: 4px; line-height: 1.7; color: #333;">$1</li>');
+  html = html.replace(/^[\*-]\s(.*)$/gm, '<li style="margin-left: 20px; list-style-type: disc; margin-bottom: 10px; padding-left: 4px; line-height: 1.7; color: #333;">$1</li>');
+
+  // 5. 改行と段落を適切にマッピングして読みやすい行間に調整
+  const lines = html.split('\n');
+  const processedLines = lines.map(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return '<div style="height: 15px;"></div>'; // 空行は適度な余白にする
+    
+    // すでにHTMLタグに変換済みの行はそのまま返す
+    if (trimmed.startsWith('<h') || trimmed.startsWith('<hr') || trimmed.startsWith('<li') || trimmed.startsWith('<div')) {
+      return line;
+    }
+    return `<p style="margin: 0 0 18px; line-height: 1.85; color: #333; font-size: 16px; text-align: justify; letter-spacing: 0.03em;">${line}</p>`;
+  });
+
+  return processedLines.join('\n');
+}
+
+export default async function PostPage({ params }: PostPageProps) {
+  const resolvedParams = await params;
+  const decodedSlug = decodeURIComponent(resolvedParams.slug);
+  const encodedSlug = encodeURIComponent(decodedSlug);
+
+  // 一時的なバグ防止のため、該当記事のIDを事前に取得
+  const { data: tempPost } = await supabase
+    .from('posts')
+    .select('id')
+    .or(`slug.eq."${decodedSlug}",slug.eq."${encodedSlug}"`)
+    .limit(1)
+    .maybeSingle();
+
+  const postId = tempPost?.id || '';
+
+  // 記事情報、および関連タグを並行取得（生日本語・%エンコードのどちらでもヒットするORクエリ）
+  const [postRes, tagsRes] = await Promise.all([
+    supabase.from('posts').select('*, categories(name)').or(`slug.eq."${decodedSlug}",slug.eq."${encodedSlug}"`).maybeSingle(),
+    supabase.from('post_tags').select('tags(name, slug)').eq('post_id', postId)
   ]);
 
   const post = postRes.data;
-  const ads = adsRes.data;
+  if (!post) {
+    notFound();
+  }
 
-  if (!post) notFound();
-
-  // Extract dynamic AdSense code for detail page
-  const adDetail = ads?.find(s => s.key === 'ad_code_detail')?.value || '';
-
-  // Premium inline markdown compiler
-  const parsedContent = (post.content || '').split('\n').map((line: string, index: number) => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('### ')) {
-      return <h3 key={index} style={{ fontSize: '18px', fontWeight: 'bold', color: '#222', marginTop: '20px', marginBottom: '8px' }}>{trimmed.replace('### ', '')}</h3>;
-    }
-    if (trimmed.startsWith('## ')) {
-      return <h2 key={index} style={{ fontSize: '23px', fontWeight: 'bold', color: '#111', borderLeft: '4px solid #0070f3', paddingLeft: '12px', marginTop: '28px', marginBottom: '12px', lineHeight: '1.4' }}>{trimmed.replace('## ', '')}</h2>;
-    }
-    if (trimmed.startsWith('# ')) {
-      return <h1 key={index} style={{ fontSize: '26px', fontWeight: 'extrabold', color: '#111', marginTop: '32px', marginBottom: '16px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>{trimmed.replace('# ', '')}</h1>;
-    }
-    if (trimmed.startsWith('- ')) {
-      return <li key={index} style={{ marginLeft: '20px', marginBottom: '6px', fontSize: '17px', color: '#333' }}>{trimmed.replace('- ', '')}</li>;
-    }
-    return trimmed ? <p key={index} style={{ marginBottom: '16px', fontSize: '17px', color: '#333', lineHeight: '1.7' }}>{trimmed}</p> : <div key={index} style={{ height: '8px' }} />;
-  });
-
-  const publishDate = new Date(post.published_at || post.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const updateDate = new Date(post.updated_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const tags = tagsRes.data || [];
 
   return (
-    <div style={{ maxWidth: '600px', margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif' }}>
-      <div style={{ marginBottom: '15px', color: '#666', fontSize: '13px' }}>
-        <Link href="/" style={{ color: '#666', textDecoration: 'none' }}>Home</Link> &gt; {post.title}
+    <div style={{ maxWidth: '750px', margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif' }}>
+      
+      {/* Breadcrumb Path */}
+      <div style={{ marginBottom: '20px', color: '#666', fontSize: '13px' }}>
+        <Link href="/" style={{ color: '#666', textDecoration: 'none' }}>ホーム</Link>
+        <span style={{ margin: '0 8px' }}>&gt;</span>
+        <span style={{ color: '#0070f3', fontWeight: 'bold' }}>{post.categories?.name || '副業コラム'}</span>
       </div>
-      
-      {post.categories && (
-        <span style={{ fontSize: '11px', color: '#0070f3', textTransform: 'uppercase', fontWeight: 'bold', backgroundColor: '#eff6ff', padding: '3px 8px', borderRadius: '4px' }}>
-          {post.categories.name}
+
+      <article>
+        {/* Editorial Meta */}
+        <span style={{ fontSize: '12px', color: '#0070f3', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+          {post.categories?.name || '副業ノウハウ'}
         </span>
-      )}
+        
+        {/* Title */}
+        <h1 style={{ fontSize: '32px', fontWeight: 'bold', color: '#111', margin: '10px 0 15px', lineHeight: '1.35', letterSpacing: '-0.02em' }}>
+          {post.title}
+        </h1>
 
-      <h1 style={{ fontSize: '32px', marginBottom: '10px', lineHeight: '1.3', fontWeight: 'bold' }}>{post.title}</h1>
-      
-      <p style={{ color: '#999', fontSize: '13px', margin: '5px 0 20px' }}>
-        Published: {publishDate} {publishDate !== updateDate ? ` | Updated: ${updateDate}` : ''}
-      </p>
-
-      {post.cover_image_url && (
-        <img src={post.cover_image_url} alt="" style={{ width: '100%', height: 'auto', borderRadius: '8px', marginBottom: '20px' }} />
-      )}
-
-      <div style={{ borderTop: '1px solid #ddd', paddingTop: '20px', marginBottom: '30px' }}>{parsedContent}</div>
-
-      {/* Relational Tags list */}
-      {post.post_tags && post.post_tags.length > 0 && (
-        <div style={{ marginBottom: '30px', display: 'flex', gap: '6px', flexWrap: 'wrap', borderTop: '1px solid #eee', paddingTop: '15px' }}>
-          {post.post_tags.map((pt: any, i: number) => pt.tags && (
-            <span key={i} style={{ backgroundColor: '#f3f4f6', color: '#4b5563', padding: '3px 8px', borderRadius: '12px', fontSize: '12px' }}>
-              #{pt.tags.name}
-            </span>
-          ))}
+        {/* Date */}
+        <div style={{ color: '#888', fontSize: '13px', marginBottom: '30px' }}>
+          公開日: {new Date(post.published_at).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}
         </div>
-      )}
 
-      {/* Dynamic Bottom Ad Slot from settings DB */}
-      {adDetail.includes('<!--') ? (
-        <div style={{ margin: '30px 0', padding: '15px', backgroundColor: '#fafafa', border: '1px dashed #ddd', borderRadius: '6px', textAlign: 'center' }}>
-          <span style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '10px' }}>Advertisement</span>
-          <div style={{ minHeight: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: '13px', fontStyle: 'italic' }}>
-            Sponsored Content Space
+        {/* Cover Image */}
+        {post.cover_image_url && (
+          <img 
+            src={post.cover_image_url} 
+            alt="" 
+            style={{ width: '100%', height: 'auto', maxHeight: '420px', objectFit: 'cover', borderRadius: '12px', marginBottom: '40px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }} 
+          />
+        )}
+
+        {/* Beautiful Styled Markdown Content Body */}
+        <div 
+          style={{ marginBottom: '60px' }}
+          dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(post.content) }} 
+        />
+        
+        {/* Tag Badges */}
+        {tags.length > 0 && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '40px', paddingTop: '20px', borderTop: '1px solid #eee' }}>
+            {tags.map((t: any, idx) => (
+              t.tags && (
+                <span 
+                  key={idx} 
+                  style={{ backgroundColor: '#f3f4f6', color: '#4b5563', padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' }}
+                >
+                  #{t.tags.name}
+                </span>
+              )
+            ))}
           </div>
-        </div>
-      ) : (
-        <div style={{ margin: '30px 0', textAlign: 'center' }} dangerouslySetInnerHTML={{ __html: adDetail }} />
-      )}
+        )}
+      </article>
 
-      {/* Styled Footer containing Privacy Policy, Contact, About Bob, and Copyright */}
-      <footer style={{ borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center', marginTop: '40px' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginBottom: '10px' }}>
-          <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Privacy Policy</Link>
+      {/* Footer Navigation */}
+      <footer style={{ borderTop: '2px solid #eee', paddingTop: '30px', textAlign: 'center', marginTop: '60px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginBottom: '15px' }}>
+          <Link href="/privacy" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>プライバシーポリシー</Link>
           <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
-          <Link href="/contact" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>Contact Us</Link>
+          <Link href="/contact" style={{ color: '#666', textDecoration: 'none', fontSize: '14px' }}>お問い合わせ</Link>
           <span style={{ color: '#ccc', fontSize: '14px' }}>|</span>
-          <Link href="/about" style={{ color: '#0070f3', textDecoration: 'none', fontSize: '14px', fontWeight: 'bold' }}>About Us</Link>
+          <Link href="/about" style={{ color: '#0070f3', textDecoration: 'none', fontSize: '14px', fontWeight: 'bold' }}>運営者情報</Link>
         </div>
         <p style={{ color: '#999', fontSize: '12px', margin: 0 }}>
-          © {new Date().getFullYear()} Bob's Daily Insights. All rights reserved.
+          © {new Date().getFullYear()} 情報マーケット. All rights reserved.
         </p>
       </footer>
     </div>
