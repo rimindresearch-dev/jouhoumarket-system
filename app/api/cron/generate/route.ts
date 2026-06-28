@@ -4,69 +4,13 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client } from '../../../../lib/r2';
 import { supabaseAdmin } from '../../../../lib/supabase';
 
-// 【絶対に安全】かつ「副業・在宅ワーク・スキルアップ・マネー情報」に特化した厳選キーワード
-const SAFE_SIDE_HUSTLE_KEYWORDS = [
-  '在宅ワーク 初心者おすすめ',
-  'AI副業 始め方',
-  'スマホでできる安全な副業',
-  'サラリーマンの副業 確定申告',
-  '動画編集 在宅ワークの現実',
-  'ブログ収益化のロードマップ',
-  'メルカリ物販で月5万稼ぐ手順',
-  'SNS運用代行の始め方',
-  'ChatGPTを使った副業アイデア',
-  '安全なネットビジネスの見分け方',
-  'スキルなしから始めるWEBライター',
-  'Canvaデザイン副業のやり方',
-  'オンラインアシスタント 始め方',
-  '音声データ入力 バイトのコツ',
-  '主婦におすすめのプチ副業',
-  'ポイ活で安全に月3万円',
-  'プログラミング副業 独学マップ',
-  '週末起業のアイデア出し',
-  'ココナラでスキルを売る方法',
-  'タイピングが早い人向けの副業',
-  'Excelスキルを活かせる在宅ワーク',
-  '初心者が騙されない副業スクール',
-  'ブログ記事の書き方 構成テンプレート',
-  '会社にバレない副業のやり方',
-  '副業用の銀行口座・クレジットカード選定',
-  'Notionを活用したタスク管理・副業効率化',
-  '画像生成AIビジネスの可能性',
-  'オンライン日本語教師の始め方',
-  '手芸・ハンドメイド作品のネット販売',
-  'ストックフォト 写真販売副業',
-  'kindle出版 印税生活のリアル',
-  '電子書籍の作り方 初心者向け',
-  'ライティングの構成案 作成手順',
-  '成果が出るアフィリエイト広告の貼り方',
-  '副業での開業届 提出タイミング',
-  'クラウドワークスで初案件を受注するコツ',
-  'ランサーズのプロフィール文の書き方',
-  '副業で役立つ時間管理術',
-  'ポッドキャスト音声配信の収益化',
-  'WEBデザイン ゼロからの勉強法',
-  'ブログのSEO対策 基本の5ステップ',
-  '主婦が在宅で稼ぐためのタイムスケジュール',
-  'スマホ動画編集アプリ CapCut活用法',
-  '安全に稼げるアンケートモニターサイト',
-  'スキマ時間を資産に変える方法',
-  '副業詐欺を即座に見破るチェックリスト',
-  '初心者のためのWebマーケティング入門',
-  'フリマアプリでの梱包・発送の自動化テクニック'
+// 万が一、AIの連携（マルチエージェント）が両方ともエラーになった場合の、高品質な予備キーワード
+const FALLBACK_AI_TOPICS = [
+  'ChatGPTと画像生成AIを使ったKindle電子書籍・絵本の出版ビジネス',
+  '顔出し不要！AI音声とCapCutを使ったTikTokショート動画の自動収益化',
+  'CanvaとMidjourneyを使ったSNS運用代行・バナーデザイン副業',
+  'Notionのオリジナルテンプレート販売ビジネスの始め方と収益化'
 ];
-
-// センシティブなキーワードを弾くためのNG単語リスト
-const SENSITIVE_NG_WORDS = [
-  '病', 'がん', '癌', '死', '訃', '亡', '逝', '逮捕', '容疑', '事件', '事故', '殺人', '強盗', '詐欺', 
-  '地震', '津波', '台風', '被災', '震災', '戦争', '軍', 'ミサイル', 'ウクライナ', 'パレスチナ', '衝突',
-  '政治', '選挙', 'スキャンダル', '不倫', '離婚', '引退', '謝罪', '批判', '抗議', 'コロナ', 'ウイルス', 
-  'ハンセン', '障害', '差別', '銃', '爆発', '火災', '被害', '裁判'
-];
-
-function isSensitive(keyword: string): boolean {
-  return SENSITIVE_NG_WORDS.some(ngWord => keyword.includes(ngWord));
-}
 
 export async function GET(req: Request) {
   try {
@@ -75,55 +19,62 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    let keyword = SAFE_SIDE_HUSTLE_KEYWORDS[Math.floor(Math.random() * SAFE_SIDE_HUSTLE_KEYWORDS.length)];
-    let source = 'fallback_list';
-
-    // 1. Googleトレンド（日本版）から急上昇キーワードを取得
-    try {
-      const rss = await fetch('https://trends.google.com/trending/rss?geo=JP', { next: { revalidate: 0 } });
-      if (rss.ok) {
-        const xmlText = await rss.text();
-        const matches = [...xmlText.matchAll(/<title>([^<]+)<\/title>/g)];
-        const rawTrends = matches.slice(1).map((match) => match[1].trim());
-
-        if (rawTrends.length > 0) {
-          const { data: recentPosts } = await supabaseAdmin
-            .from('posts')
-            .select('slug')
-            .order('published_at', { ascending: false })
-            .limit(50);
-          
-          const existingSlugs = new Set((recentPosts || []).map((p) => p.slug));
-
-          const safeTrends = rawTrends.filter((trend) => {
-            if (isSensitive(trend)) return false;
-            const tempSlug = encodeURIComponent(trend.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-'));
-            return !existingSlugs.has(tempSlug);
-          });
-
-          if (safeTrends.length > 0) {
-            keyword = safeTrends[Math.floor(Math.random() * safeTrends.length)];
-            source = 'google_trends_jp';
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Google Trends JP RSSの取得に失敗したため、副業特化リストを使用します', e); 
-    }
-
     const seed = Math.floor(Math.random() * 9999999);
 
-    // 2. Geminiの代わりに、10秒制限をクリアできる爆速の openai モデルでマスターピースJSONを要求
-    const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"Japanese Category (e.g., 副業ノウハウ, 在宅ワーク, ネットビジネス)","tags":["string"],"imagePrompt":"string"}. ' +
-      'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, a friendly and expert personal finance and side-hustle advisor in Japan. Your article MUST follow this structure: ' +
-      '1) Introduction: Warmly explain WHAT the subject/keyword is in detail in fluent Japanese. ' +
-      '2) The Connection to Side Hustle: Intelligently and logically explain how readers can leverage this trend or topic to earn income in Japan (e.g., blogging, remote tech skills, web writing, reselling, or teaching beginners about this topic, or what we can learn about marketing from this trend). ' +
-      '3) Step-by-Step Guide: Write an extremely practical, easy-to-follow, step-by-step Japanese guide on how a complete beginner can start this related side gig. ' +
-      '4) Safety & Compliance: Remind readers in Japanese about tax filing (kakutei shinkoku) when side income exceeds 200,000 yen, and warn them to avoid high-priced get-rich-quick scams. ' +
-      '5) Koji\'s Take: Conclude with Koji\'s distinctive, encouraging, friendly closing advice in Japanese. ' +
+    // ==========================================
+    // 【ステップ1】AIエージェントA（ブレイン）：最新のAI副業テーマを自律発案する
+    // ==========================================
+    let keyword = '';
+    try {
+      const brainPrompt = `あなたは最先端のデジタルマーケターです。
+現在、日本国内で『ChatGPT, Midjourney, Vrew, HeyGen, Suno, CapCut』などの最新AIツールやSNS自動化を組み合わせて、一般の初心者や主婦、サラリーマンが安全かつ高確率で「月5万〜20万円」を稼げる、非常に具体的で斬新な「AI副業・在宅ワークのテーマ」を1つだけ考案してください。
+「ブログを書く」「動画を編集する」といった抽象的で平凡なテーマは厳禁です。
+
+出力は、余計な説明や前置き（「はい、考えました」等）は一切含めず、タイトルとなるテーマの文字列のみを100%日本語で出力してください。
+
+出力例：
+ChatGPTと画像生成AIを活用した、Amazon Kindle子供向け英語絵本の自動出版ビジネス`;
+
+      const brainResponse = await fetch('https://text.pollinations.ai/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'user', content: brainPrompt }
+          ],
+          model: 'openai',
+          seed: seed
+        })
+      });
+
+      if (brainResponse.ok) {
+        keyword = (await brainResponse.text()).trim();
+        // 万が一マークダウン（#など）が入った場合のためにクレンジング
+        keyword = keyword.replace(/[#*`"']/g, '').trim();
+      } else {
+        throw new Error('Agent B (Brain) Failed to respond.');
+      }
+    } catch (e) {
+      console.warn('エージェントBのテーマ発案が失敗したため、予備リストを使用します。', e);
+      keyword = FALLBACK_AI_TOPICS[Math.floor(Math.random() * FALLBACK_AI_TOPICS.length)];
+    }
+
+    // ==========================================
+    // 【ステップ2】AIエージェントC（ライター「コウジ」）：テーマを元に傑作コラムを執筆する
+    // ==========================================
+    const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"string","tags":["string"],"imagePrompt":"string"}. ' +
+      'STRICT RULES FOR KOJI: You are Koji, a friendly and expert personal finance and AI automation side-hustle advisor in Japan. ' +
+      `Your topic to write about today is: "${keyword}". ` +
+      'Your article MUST follow this structure: ' +
+      '1) Introduction & Fact/Case Study: Warmly introduce the specific AI tool/concept. You MUST explain a realistic success case study (e.g. how a complete beginner earned money using this specific tech stack) in fluent Japanese. Give real tool names! ' +
+      '2) Required Tools (The Tech Stack): List the exact, real-world AI and digital tools needed (e.g., ChatGPT, Midjourney, CapCut, Suno, Notion) and what they do. ' +
+      '3) Actionable Step-by-Step Guide: Write an extremely practical, easy-to-follow, step-by-step Japanese guide on how to actually start, execute, and monetize this specific side gig. ' +
+      '4) Safety, Tax & Compliance: Remind readers in Japanese about tax filing (kakutei shinkoku) when side income exceeds 200,000 yen, and warn them to avoid high-priced scams. ' +
+      '5) Koji\'s Take: Conclude with Koji\'s encouraging, friendly closing advice in Japanese. ' +
+      'STRICT IMAGE PROMPT RULE: You MUST write a custom, highly specific imagePrompt in English representing the theme of the article. For example, if it is about childrens book publishing, describe colorful illustration book covers on a tablet. If it is about audio synthesized podcasts, describe a premium microphone with neon soundwaves. DO NOT generate simple office desks. ' +
       'STRICT LANGUAGE RULE: You MUST write the entire JSON response (title, summary, content, category, tags) strictly in 100% fluent, natural, professional Japanese (です・ます調). Output raw JSON only. Seed: ' + seed;
 
-    const userPrompt = 'Generate a unique, masterpiece article about: "' + keyword + '".';
+    const userPrompt = `Generate a masterpiece, highly practical case-study article based on the research theme: "${keyword}".`;
     let blogData: any;
 
     try {
@@ -135,13 +86,13 @@ export async function GET(req: Request) {
             { role: 'system', content: sysPrompt },
             { role: 'user', content: userPrompt }
           ],
-          model: 'openai', // 👈 タイムアウトを防ぐ超高速openaiモデルを設定
+          model: 'openai', // 超高速モデル
           jsonMode: true
         })
       });
 
       if (aiText.ok) {
-        // Bobと同じ、余分な記号を切り取るクレンジングパーサーを適用
+        // 余分なマークダウンマーク（ ```json ）を削るクレンジング処理
         const rawJsonText = await aiText.text();
         const startIndex = rawJsonText.indexOf('{');
         const endIndex = rawJsonText.lastIndexOf('}');
@@ -149,11 +100,10 @@ export async function GET(req: Request) {
         const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
         blogData = JSON.parse(cleanJson);
       } else {
-        console.warn('Text API returned error status. Activating programmatic fallback payload.');
-        blogData = generateFallbackPayload(keyword);
+        throw new Error('Agent C (Koji) failed to respond.');
       }
     } catch (apiError) {
-      console.warn('Text API fetch failed. Activating programmatic fallback payload.', apiError);
+      console.warn('エージェントCの執筆が失敗したため、安全用の日本語フォールバックを起動します:', apiError);
       blogData = generateFallbackPayload(keyword);
     }
 
@@ -170,7 +120,7 @@ export async function GET(req: Request) {
     // 4. カバー画像を生成してCloudflare R2にアップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
-      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', anime style, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
+      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', modern graphic design, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
       const imgRes = await fetch(imgUrl);
       
       if (imgRes.ok) {
@@ -215,7 +165,7 @@ export async function GET(req: Request) {
     
     if (postError) throw postError;
 
-    // 7. タグの紐付け処理 (日本語タグ対応)
+    // 7. タグの紐付け処理
     if (Array.isArray(blogData.tags)) {
       await Promise.all(blogData.tags.map(async (t: string) => {
         if (!t) return;
@@ -233,91 +183,88 @@ export async function GET(req: Request) {
       }));
     }
 
-    return NextResponse.json({ success: true, data: { source, keyword, title: blogData.title, slug: blogData.slug, cover_image: coverUrl } });
+    return NextResponse.json({ success: true, data: { source: 'multi_agent_collaboration', researchedTopic: keyword, title: blogData.title, slug: blogData.slug, cover_image: coverUrl } });
   } catch (err: any) {
     console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
-// 日本語の自動フォールバックコラム作成関数（AIエラー時にも毎回確実に「異なる画像と記事」を書き出す安全設計）
+// 日本語の自動フォールバックコラム作成関数（万が一の時用）
 function generateFallbackPayload(keyword: string) {
   const safeSlug = encodeURIComponent(keyword.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'side-hustle';
   
-  const titles = [
-    keyword + 'から学ぶ！初心者でも自宅で安全に稼ぐための副業・在宅ワーク完全ガイド',
-    '【在宅副業】今話題の「' + keyword + '」をテーマに情報発信ブログで稼ぐロードマップ',
-    '副業初心者必見：' + keyword + 'の需要から紐解く、安全なオンライン仕事術と確定申告のコツ'
-  ];
+  const title = `【最先端AI副業】未経験から月10万稼ぐ！「${keyword}」の実践手順と成功事例`;
+  const summary = `最新のAI技術である「${keyword}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
 
-  const summaries = [
-    '話題のキーワード「' + keyword + '」を切り口に、初心者でも自宅で安全に始められる具体的な副業アイデアと実践ステップを分かりやすく解説します。',
-    '最新トレンドの「' + keyword + '」に関する情報を発信して稼ぐ、安全なブログ運営やライティング副業のロードマップを丁寧にお届けします。'
-  ];
+  const markdownContent = `### 1. はじめに：AIを活用した「${keyword}」とは？
 
-  const hash = keyword.length;
-  const selectedTitle = titles[hash % titles.length];
-  const selectedSummary = summaries[hash % summaries.length];
+こんにちは！副業アドバイザーのコウジです。今回は、今まさにビジネス界隈で大きな話題を集めている、最新のAIツールを活用した**「${keyword}」**について解説します。
 
-  // フォールバックでも画像が同じになるのを防ぐため、画像指示（プロンプト）に自動でキーワードを埋め込み動的化
-  const dynamicImagePrompt = `A cozy and bright 3D render illustration of a home desk with a laptop, representing the modern workspace theme of ${keyword}, warm cozy lighting, highly detailed`;
+近年、AI技術の進化によって、これまで専門スキルが必要だった「動画編集」「デザイン作成」「書籍出版」といったお仕事を、個人が数時間でハイクオリティにこなせる時代が到来しました。実際に、副業未経験からスタートした多くのサラリーマンや主婦の方が、AIを相棒にすることで**「初月から数万円、3ヶ月以内に月10万円以上」の安定した成果**を叩き出しています。
 
-  const markdownContent = `### はじめに：今話題の「${keyword}」について解説
-
-こんにちは！副業アドバイザーのコウジです。最近、インターネットやSNS上で**「${keyword}」**というキーワードが大きな注目を集めています。実は、こうした急上昇する最新トレンドや話題のテーマには、私たちが在宅ワークや副業で新しい収入源を作るための「ヒント」がたくさん隠されています。
-
-今回は、この最新トレンドをテーマに、初心者でも安全にオンラインで稼ぐための具体的なアイデアと実践方法をわかりやすく解説します。
+今回は、実際に初心者チームが成功した具体的なケーススタディを元に、使用するツールや実践的なアプローチを網羅してお届けします。
 
 ---
 
-### 「${keyword}」を副業・在宅ワークに活かす具体的なアプローチ
+### 2. 稼ぐために必要な「ツールの組み合わせ（Tech Stack）」
 
-トレンド性の高いテーマは、特に以下のようなネット副業と非常に相性が良いのが特徴です。
+この副業を成立させるために使用する、具体的かつすべて無料で始められるAI・デザインツールは以下の通りです。
 
-1. **特化ブログ・アフィリエイトでの情報発信**
-   「${keyword}」について調べる人が増えている今、関連する解説記事や最新情報をまとめたブログを書くことで、短期間でアクセスを集めることができます。広告収入（Googleアドセンスやアフィリエイト）を狙う絶好のチャンスです。
-2. **WEBライティング案件の獲得**
-   クラウドソーシングサイト（クラウドワークスやランサーズなど）では、今話題のテーマに関する記事執筆（コラムライティング）の案件が多数募集されます。トレンドに詳しくなることで、高単価なライター案件を受注しやすくなります。
-
----
-
-### トレンドブログ・Webライターを安全に始めるステップ
-
-未経験から自宅で安全にスタートするための基本的な流れは以下の通りです。
-
-1. **まずは徹底したリサーチから始める**
-   「${keyword}」に関連する最新ニュースや、人々が「何に困っているか（知りたいことは何か）」をリサーチします。
-2. **無料のブログやクラウドソーシングに登録する**
-   WordPressでのブログ開設がベストですが、まずはクラウドワークス等のプラットフォームに登録してライティングの感覚を掴むのもおすすめです。
-3. **読者の悩みを解決する文章を書く**
-   ただの日記ではなく、「この記事を読めば疑問が解決する」という丁寧な構成を意識して執筆しましょう。
+1. **文章・企画案の作成：ChatGPT (OpenAI) / Claude**
+   * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。
+2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**
+   * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。
+3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**
+   * 綺麗なテロップ（字幕）の自動挿入や、AIによる超リアルな日本語ナレーション（吹き替え）の作成を、自動でほぼワンクリックで行います。
 
 ---
 
-### 安全に稼ぐためのルールと確定申告のポイント
+### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」
 
-副業を楽しく、そして安全に続けるためにはいくつかの重要な注意点があります。
+自宅から安全に最初の一歩を踏み出すための具体的な流れです。
 
-* **ネット上の甘い言葉（詐欺案件）に注意する**
-   「誰でも1日5分で10万円」「簡単作業で高額報酬」といった極端な募集は、高額な情報商材の売りつけや詐欺の可能性が非常に高いです。必ず信頼できるプラットフォームを利用し、安全第一で作業しましょう。
-* **副業収入が年間20万円を超えたら確定申告を**
-   副業での所得（収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告（所得税の申告や住民税 of 住民税の申告）が必要です。日々の経費や収入はしっかり帳簿をつけて管理しておきましょう。
+1. **AIツールを実際に触って「サンプル」を作ってみる**
+   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で短いコラム記事や動画のサンプルを3〜5本作成してみます。AIの指示（プロンプト）に慣れることが一番の近道です。
+2. **クラウドソーシングでの「お仕事獲得」**
+   「クラウドワークス」や「ココナラ」に登録し、作成したサンプルをアピールして、Webライター、ロゴ作成、動画編集などの案件に応募します。AIを使えば数分の一の時間で納品できるため、効率よく高い利益率を確保できます。
+3. **自社メディアでの「資産化」**
+   依頼を受けて稼ぐだけでなく、作成した電子書籍をAmazon Kindleで出版したり、作成したショート動画をTikTokに投稿して広告収入を狙うなど、将来的に自動で収入が入り続ける仕組みを構築します。
+
+---
+
+### 4. 安全に稼ぐためのルールと確定申告のポイント
+
+副業を安全に楽しむために、必ず守るべき最重要事項です。
+
+* **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**
+   本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する「実務」です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。
+* **副業収入が年間20万円を超えたら確定申告を行う**
+   副業で得た所得（年間収入からサーバー代やツール代などの経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。
 
 ---
 
 ### コウジのアドバイス
 
-新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。
+AIが普及することで「個人の仕事が奪われる」と不安視されることもありますが、現実に起きているのは**「AIを使いこなす個人が、AIを使わないプロを圧倒する」**という下克上のような現象です。
 
-千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
+最初は難しく感じるかもしれませんが、スマホ感覚でAIに指示を出せるようになれば、まるで自分専用のアシスタントが24時間体制で働いてくれているような強みを手に入れられます。
+千里の道も一歩から。まずは無料のアカウント作成から、自宅で安全に新しい収入源作りにチャレンジしてみませんか？あなたの第一歩を応援しています！`;
+
+  // フォールバック用の動的画像指示
+  const dynamicImagePrompt = `A stunning and high-tech 3D render illustration representing the workspace theme of ${keyword}, cozy soft lighting, modern tablet display with colorful UI, highly detailed`;
 
   return {
-    title: selectedTitle,
+    title: title,
     slug: safeSlug + '-' + Math.floor(Math.random() * 1000),
-    summary: selectedSummary,
+    summary: summary,
     content: markdownContent,
     category: '副業ノウハウ',
-    tags: [keyword.replace(/\s+/g, ''), '在宅ワーク', '初心者向け', 'コウジの解説'],
+    tags: [keyword.replace(/\s+/g, '').substring(0, 10), 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
     imagePrompt: dynamicImagePrompt
   };
 }
+'@
+
+# 2. 安全に上書き保存を実行します
+$RouteCode | Out-File -LiteralPath "app/api/cron/generate/route.ts" -Encoding utf8
