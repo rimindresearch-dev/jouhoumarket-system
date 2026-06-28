@@ -11,7 +11,7 @@ export default function AboutPage() {
       {/* Koji's Profile Header */}
       <header style={{ borderBottom: '2px solid #eee', paddingBottom: '20px', marginBottom: '30px', display: 'flex', gap: '20px', alignItems: 'center' }}>
         <img 
-          src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop" 
+          src="https://image.pollinations.ai/prompt/A%20friendly%20smiling%20Japanese%20male%20personal%20finance%20advisor%20named%20Koji,%2030s,%20short%20clean%20hair,%20wearing%20a%20casual%20shirt,%20circular%20headshot%20profile%20photo,%20white%20studio%20background,%20highly%20detailed?width=150&height=150&nologo=true&seed=9128" 
           alt="コウジ" 
           style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #eee', flexShrink: 0 }} 
         />
@@ -32,3 +32,4 @@ export default function AboutPage() {
     </div>
   );
 }
+
