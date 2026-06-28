@@ -44,7 +44,7 @@ const SAFE_SIDE_HUSTLE_KEYWORDS = [
   'クラウドワークスで初案件を受注するコツ',
   'ランサーズのプロフィール文の書き方',
   '副業で役立つ時間管理術',
-  'ポッドキャスト音声配信 of 収益化',
+  'ポッドキャスト音声配信の収益化',
   'WEBデザイン ゼロからの勉強法',
   'ブログのSEO対策 基本の5ステップ',
   '主婦が在宅で稼ぐためのタイムスケジュール',
@@ -56,7 +56,7 @@ const SAFE_SIDE_HUSTLE_KEYWORDS = [
   'フリマアプリでの梱包・発送の自動化テクニック'
 ];
 
-// センシティブなキーワードを強力に弾くためのNG単語リスト
+// センシティブなキーワードを弾くためのNG単語リスト
 const SENSITIVE_NG_WORDS = [
   '病', 'がん', '癌', '死', '訃', '亡', '逝', '逮捕', '容疑', '事件', '事故', '殺人', '強盗', '詐欺', 
   '地震', '津波', '台風', '被災', '震災', '戦争', '軍', 'ミサイル', 'ウクライナ', 'パレスチナ', '衝突',
@@ -78,7 +78,7 @@ export async function GET(req: Request) {
     let keyword = SAFE_SIDE_HUSTLE_KEYWORDS[Math.floor(Math.random() * SAFE_SIDE_HUSTLE_KEYWORDS.length)];
     let source = 'fallback_list';
 
-    // 1. Googleトレンド（日本版）から本日の急上昇キーワードを取得して精査
+    // 1. Googleトレンド（日本版）から急上昇キーワードを取得
     try {
       const rss = await fetch('https://trends.google.com/trending/rss?geo=JP', { next: { revalidate: 0 } });
       if (rss.ok) {
@@ -113,28 +113,17 @@ export async function GET(req: Request) {
 
     const seed = Math.floor(Math.random() * 9999999);
 
-    // 2. システムプロンプト（区切り文字デリミタ方式で出力を指示）
-    const sysPrompt = `あなたは日本の優秀な副業・在宅ワークアドバイザー「コウジ」です。
-話題のキーワードについて、初心者向けの安全な稼ぎ方のコラムを執筆してください。
-出力はJSON形式ではなく、必ず以下の区切り文字（デリミタ）を入れて、プレーンテキストのみで出力してください（マークダウンやJSONコードブロック \`\`\` 等で囲わないでください）。
+    // 2. Geminiの代わりに、10秒制限をクリアできる爆速の openai モデルでマスターピースJSONを要求
+    const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"Japanese Category (e.g., 副業ノウハウ, 在宅ワーク, ネットビジネス)","tags":["string"],"imagePrompt":"string"}. ' +
+      'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, a friendly and expert personal finance and side-hustle advisor in Japan. Your article MUST follow this structure: ' +
+      '1) Introduction: Warmly explain WHAT the subject/keyword is in detail in fluent Japanese. ' +
+      '2) The Connection to Side Hustle: Intelligently and logically explain how readers can leverage this trend or topic to earn income in Japan (e.g., blogging, remote tech skills, web writing, reselling, or teaching beginners about this topic, or what we can learn about marketing from this trend). ' +
+      '3) Step-by-Step Guide: Write an extremely practical, easy-to-follow, step-by-step Japanese guide on how a complete beginner can start this related side gig. ' +
+      '4) Safety & Compliance: Remind readers in Japanese about tax filing (kakutei shinkoku) when side income exceeds 200,000 yen, and warn them to avoid high-priced get-rich-quick scams. ' +
+      '5) Koji\'s Take: Conclude with Koji\'s distinctive, encouraging, friendly closing advice in Japanese. ' +
+      'STRICT LANGUAGE RULE: You MUST write the entire JSON response (title, summary, content, category, tags) strictly in 100% fluent, natural, professional Japanese (です・ます調). Output raw JSON only. Seed: ' + seed;
 
-[TITLE]
-ここにタイトル（最大40文字。キーワード「\${keyword}」を必ず含めること。副業初心者を引きつける魅力的な日本語タイトル）
-[SLUG]
-ここにURL用の半角英数字とハイフンのみのスラッグ（例: koji-sidehustle-123）
-[SUMMARY]
-ここに100文字程度の簡潔な要約
-[CATEGORY]
-登録するカテゴリ名（例: 副業ノウハウ、在宅ワーク、ネットビジネス）
-[TAGS]
-タグ（半角カンマ区切り、例: 在宅ワーク,初心者,ブログ）
-[IMAGE_PROMPT]
-カバー画像生成用の「英語のプロンプト」（キーワード「\${keyword}」を元に、明るく現代的なコワーキングスペースやデスクワークを表す高品質な3Dイラストの英語指示、例: A cozy and bright 3D render illustration representing the theme of \${keyword}...）
-[CONTENT]
-ここから1000文字以上の詳しい記事本文を書いてください。
-導入部分（はじめに）では、読者のために必ず「\${keyword}」が一体何であるのか（人名、流行語、技術、会社など）を丁寧に解説・紹介してください。その後、副業や在宅ワーク（情報発信ブログ、ライティング案件、関連スキルなど）に論理的かつ自然に結びつける構成にしてください。また、確定申告（20万円ルール）や、ネット詐欺への注意喚起も必ず盛り込んでください。`;
-
-    const userPrompt = `キーワード「${keyword}」をもとに、最高品質のコラム記事を区切り文字フォーマットに従ってプレーンテキストで執筆してください。`;
+    const userPrompt = 'Generate a unique, masterpiece article about: "' + keyword + '".';
     let blogData: any;
 
     try {
@@ -146,57 +135,25 @@ export async function GET(req: Request) {
             { role: 'system', content: sysPrompt },
             { role: 'user', content: userPrompt }
           ],
-          model: 'openai',
-          seed: seed
+          model: 'openai', // 👈 タイムアウトを防ぐ超高速openaiモデルを設定
+          jsonMode: true
         })
       });
 
       if (aiText.ok) {
-        const rawText = await aiText.text();
-        
-        // 正規表現を使って各項目を安全に切り分ける（JSONパースエラーが100%起きません）
-        const titleMatch = rawText.match(/\[TITLE\]\s*([\s\S]*?)\s*\[SLUG\]/i);
-        const slugMatch = rawText.match(/\[SLUG\]\s*([\s\S]*?)\s*\[SUMMARY\]/);
-        const summaryMatch = rawText.match(/\[SUMMARY\]\s*([\s\S]*?)\s*\[CONTENT\]/);
-        const contentMatch = rawText.match(/\[CONTENT\]\s*([\s\S]*?)\s*(?:\[TAGS\]|\[CATEGORY\]|$)/);
-        
-        // 各種データの抽出（パース失敗時はフォールバックを適用）
-        if (titleMatch && summaryMatch && contentMatch) {
-          // タグとカテゴリの簡易抽出
-          const categoryMatch = rawText.match(/\[CATEGORY\]\s*(.*)/i) || rawText.match(/"category"\s*:\s*"(.*?)"/);
-          const tagsMatch = rawText.match(/\[TAGS\]\s*(.*)/i);
-          
-          let category = '副業ノウハウ';
-          if (categoryMatch) categoryName = categoryMatch[1].trim();
-          
-          let parsedTags = [keyword, '在宅ワーク', 'コウジの解説'];
-          if (tagsMatch) {
-            parsedTags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean);
-          }
-
-          let imagePromptStr = `A cozy bright 3D render illustration representing the theme of ${keyword}, desk, laptop, highly detailed`;
-          const imgPromptMatch = rawText.match(/\[IMAGE_PROMPT\]\s*([\s\S]*?)\s*\[CONTENT\]/i);
-          if (imgPromptMatch) {
-            imagePromptStr = imgPromptMatch[1].trim();
-          }
-
-          blogData = {
-            title: titleMatch[1].trim(),
-            slug: slugMatch[1].trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-'),
-            summary: summaryMatch[1].trim(),
-            content: contentMatch[1].trim(),
-            category: category,
-            tags: parsedTags,
-            imagePrompt: imagePromptStr
-          };
-        } else {
-          throw new Error('区切り文字フォーマットのパースに失敗しました。フォールバックを作動させます。');
-        }
+        // Bobと同じ、余分な記号を切り取るクレンジングパーサーを適用
+        const rawJsonText = await aiText.text();
+        const startIndex = rawJsonText.indexOf('{');
+        const endIndex = rawJsonText.lastIndexOf('}');
+        if (startIndex === -1 || endIndex === -1) throw new Error('No valid JSON found');
+        const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
+        blogData = JSON.parse(cleanJson);
       } else {
-        throw new Error('AIテキスト生成サーバーが応答しません。');
+        console.warn('Text API returned error status. Activating programmatic fallback payload.');
+        blogData = generateFallbackPayload(keyword);
       }
     } catch (apiError) {
-      console.warn('AI生成プロセスでエラーが起きたため、安全用の日本語フォールバックを起動します:', apiError);
+      console.warn('Text API fetch failed. Activating programmatic fallback payload.', apiError);
       blogData = generateFallbackPayload(keyword);
     }
 
@@ -344,7 +301,7 @@ function generateFallbackPayload(keyword: string) {
 * **ネット上の甘い言葉（詐欺案件）に注意する**
    「誰でも1日5分で10万円」「簡単作業で高額報酬」といった極端な募集は、高額な情報商材の売りつけや詐欺の可能性が非常に高いです。必ず信頼できるプラットフォームを利用し、安全第一で作業しましょう。
 * **副業収入が年間20万円を超えたら確定申告を**
-   副業での所得（収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告（所得税の申告や住民税の申告）が必要です。日々の経費や収入はしっかり帳簿をつけて管理しておきましょう。
+   副業での所得（収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告（所得税の申告や住民税 of 住民税の申告）が必要です。日々の経費や収入はしっかり帳簿をつけて管理しておきましょう。
 
 ---
 
