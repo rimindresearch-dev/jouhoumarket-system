@@ -1,6 +1,5 @@
 ﻿// app/layout.tsx
 import type { Metadata } from 'next';
-import './globals.css'; // グローバルCSSへのインポート（パスやファイル名が異なる場合は適宜調整してください）
 
 export const metadata: Metadata = {
   title: {
@@ -20,7 +19,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "情報マーケット",
-    description: "副業、在宅ワーク、安全な稼ぎ方を、アドバイザーのコウジが厳選して届けるお宝情報コラムサイト。",
+    description: "副業、在宅ワーク、安全な稼ぎ方を、アドバイザー of コウジが厳選して届けるお宝情報コラムサイト。",
   }
 };
 
