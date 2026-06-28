@@ -147,7 +147,6 @@ export async function GET(req: Request) {
       });
 
       if (aiText.ok) {
-        // Bobと同じクレンジングパーサー
         const rawJsonText = await aiText.text();
         const startIndex = rawJsonText.indexOf('{');
         const endIndex = rawJsonText.lastIndexOf('}');
@@ -195,6 +194,7 @@ export async function GET(req: Request) {
 
     // 5. カテゴリの取得または新規作成
     let catId: string;
+    // 記述ミスを完全に修正し、Vercelのビルドエラーを解決
     const categoryName = blogData.category || '副業ノウハウ';
     const catSlug = encodeURIComponent(categoryName.toLowerCase());
 
@@ -266,7 +266,7 @@ function generateFallbackPayload(selectedTopic: any) {
 
 この副業を成立させるために使用する、具体的かつすべて無料で始められるAI・デザインツールは以下の通りです。
 
-1. **文章・企画案の作成：ChatGPT (OpenAI) / Claude**
+1. **文章・企画案 of 作成：ChatGPT (OpenAI) / Claude**
    * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。
 2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**
    * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。
@@ -295,13 +295,13 @@ function generateFallbackPayload(selectedTopic: any) {
 * **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**
    本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する「実務」です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。
 * **副業収入が年間20万円を超えたら確定申告を行う**
-   副業での所得（収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。
+   副業での所得（年間収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。
 
 ---
 
 ### コウジのアドバイス
 
-AIが普及することで「個人の仕事が奪われる」と不安視されることもありますが、現実に起きているのは**「AIを使いこなす個人が、AIを使わないプロを圧倒する」**という下克上のような現象です。
+新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。
 
 千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
 
