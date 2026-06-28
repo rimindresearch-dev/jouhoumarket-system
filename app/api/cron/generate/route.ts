@@ -1,4 +1,4 @@
-﻿# 1. コンパイルエラーを完全に修正したプログラム（route.ts）を定義します
+﻿# 1. 構文エラーを完全に解消した自動生成プログラム（route.ts）を定義します
 $RouteCode = @'
 // app/api/cron/generate/route.ts
 import { NextResponse } from 'next/server';
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
       blogData = generateFallbackPayload(seedCategory);
     }
 
-    // 3. 重重複ガード（タイトル）
+    // 3. 重複ガード（タイトル）
     const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', blogData.title).limit(1).maybeSingle();
     if (dup) return NextResponse.json({ success: true, message: 'Duplicate post skipped' });
 
@@ -113,7 +113,7 @@ export async function GET(req: Request) {
 
     // 5. カテゴリの取得または新規作成
     let catId: string;
-    // selectedTopic を排除し、コンパイルエラーを完全に解決
+    // 構文エラーを完全に解決（categoryNameの重複定義を解消）
     const categoryName = blogData.category || '副業ノウハウ';
     const catSlug = encodeURIComponent(categoryName.toLowerCase());
 
@@ -167,21 +167,14 @@ export async function GET(req: Request) {
 
 // 日本語の自動フォールバックコラム作成関数（万が一の時用）
 function generateFallbackPayload(seedCategory: string) {
-  const fallbackKeywords = [
-    'ChatGPTを使ったKindle絵本の自動出版ビジネス',
-    '顔出し不要！AI音声とCapCutを使ったTikTokショート動画の自動収益化',
-    'CanvaとMidjourneyを使ったSNS運用代行・バナーデザイン副業',
-    'Notionのオリジナルテンプレート販売ビジネスの始め方と収益化'
-  ];
-  const keyword = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
-  const safeSlug = encodeURIComponent(keyword.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'side-hustle';
+  const safeSlug = encodeURIComponent(seedCategory.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'side-hustle';
   
-  const title = `【AI副業】未経験から月10万稼ぐ！「${keyword}」の実践手順と成功事例`;
-  const summary = `最新のAI技術である「${keyword}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
+  const title = `【AI副業】未経験から月10万稼ぐ！「${seedCategory}」の実践手順と成功事例`;
+  const summary = `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
 
-  const markdownContent = `### 1. はじめに：AIを活用した「${keyword}」とは？
+  const markdownContent = `### 1. はじめに：AIを活用した「${seedCategory}」とは？
 
-こんにちは！副業アドバイザーのコウジです。今回は、今まさにビジネス界隈で大きな話題を集めている、最新のAIツールを活用した**「${keyword}」**について解説します。
+こんにちは！副業アドバイザーのコウジです。今回は、今まさにビジネス界隈で大きな話題を集めている、最新のAIツールを活用した**「${seedCategory}」**について解説します。
 
 近年、AI技術の進化によって、これまで専門スキルが必要だった「動画編集」「デザイン作成」「書籍出版」といったお仕事を、個人が数時間でハイクオリティにこなせる時代が到来しました。実際に、副業未経験からスタートした多くのサラリーマンや主婦の方が、AIを相棒にすることで**「初月から数万円、3ヶ月以内に月10万円以上」の安定した成果**を叩き出しています。
 
@@ -218,7 +211,7 @@ function generateFallbackPayload(seedCategory: string) {
 副業を安全に楽しむために、必ず守るべき最重要事項です。
 
 * **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**
-   本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みに解決する「実務」です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。
+   本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する「実務」です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。
 * **副業収入が年間20万円を超えたら確定申告を行う**
    副業で得た所得（年間収入からサーバー代やツール代などの経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。
 
@@ -230,8 +223,8 @@ AIが普及することで「個人の仕事が奪われる」と不安視され
 
 千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
 
-  // フォールバック用の動的画像指示
-  const dynamicImagePrompt = `A stunning and high-tech 3D render illustration representing the workspace theme of ${keyword}, cozy soft lighting, modern tablet display with colorful UI, highly detailed`;
+  // フィールバック用の動的画像指示
+  const dynamicImagePrompt = `A stunning and high-tech 3D render illustration representing the workspace theme of ${seedCategory}, cozy soft lighting, modern tablet display with colorful UI, highly detailed`;
 
   return {
     title: title,
@@ -239,7 +232,7 @@ AIが普及することで「個人の仕事が奪われる」と不安視され
     summary: summary,
     content: markdownContent,
     category: '副業ノウハウ',
-    tags: [keyword.replace(/\s+/g, '').substring(0, 10), 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
+    tags: [seedCategory.replace(/\s+/g, '').substring(0, 10), 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
     imagePrompt: dynamicImagePrompt
   };
 }
