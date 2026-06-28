@@ -7,8 +7,7 @@ import { supabaseAdmin } from '../../../../lib/supabase';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// 【絶対に安全】かつ「副業・在宅ワーク・スキルアップ・マネー情報」に特化した厳選大カテゴリ
-// Googleトレンドを完全に排除し、常に実用的で稼げるテーマに固定します。
+// AIが最先端の副業を発明するための「大カテゴリ（シード）」
 const AI_SEED_CATEGORIES = [
   'AI動画クリエイター（TikTok, YouTube Shorts, HeyGen, CapCut）',
   'AI画像・グラフィックデザイン（Midjourney, Canva, バナーデザイン, ロゴ制作）',
@@ -33,21 +32,29 @@ export async function GET(req: Request) {
     const seedCategory = AI_SEED_CATEGORIES[Math.floor(Math.random() * AI_SEED_CATEGORIES.length)];
     const seedNameClean = seedCategory.split('（')[0]; // 安全なテキスト抽出
 
-    // 2. 超具体的・事実ベースの記事執筆指示（ワンパス・マルチエージェント協調）
-    const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"string","tags":["string"],"imagePrompt":"string"}. ' +
-      'STRICT DUAL-AGENT COLLABORATION RULES:\n' +
-      '1) Act as AI Agent B (Researcher Brain): First, internally brainstorm and invent one extremely specific, trendy, and highly realistic AI side-hustle concept for 2026 (e.g. using Suno to sell custom sound assets, or using HeyGen to automate recruiting videos, or ChatGPT for local business translation). Avoid generic "blogging" or "freelancing" clichés. This invented concept is your "Research Theme".\n' +
-      '2) Act as AI Agent C (Expert Writer Koji): Now, write a masterpiece guide about that "Research Theme" you just invented, strictly from the perspective of Koji, a friendly Japanese side-hustle expert.\n' +
-      'Your article content MUST follow this structure in Japanese:\n' +
-      '- Introduction & Fact/Case Study: Warmly introduce the specific AI tool/concept. You MUST explain a realistic success case study (e.g. how a complete beginner earned money using this specific tech stack) in fluent Japanese. Give real tool names!\n' +
-      '- Required Tools (The Tech Stack): List the exact, real-world AI and digital tools needed (e.g., ChatGPT, Midjourney, CapCut, Suno, Notion) and what they do.\n' +
-      '- Actionable Step-by-Step Guide: Write an extremely practical, easy-to-follow, step-by-step Japanese guide on how to actually start, execute, and monetize this specific side gig.\n' +
-      '- Safety, Tax & Compliance: Remind readers in Japanese about tax filing (kakutei shinkoku) when side income exceeds 200,000 yen, and warn them to avoid high-priced scams.\n' +
-      '- Koji\'s Take: Conclude with Koji\'s encouraging, friendly closing advice in Japanese.\n' +
-      'STRICT IMAGE PROMPT RULE: You MUST write a custom, highly specific imagePrompt in English representing the theme of the article. For example, if it is about childrens book publishing, describe colorful illustration book covers on a tablet. If it is about audio synthesized podcasts, describe a premium microphone with neon soundwaves. DO NOT generate simple office desks. ' +
-      'STRICT LANGUAGE RULE: You MUST write the entire JSON response (title, summary, content, category, tags) strictly in 100% fluent, natural, professional Japanese (です・ます調). Output raw JSON only. Seed: ' + seed;
+    // 2. 超具体的・事実ベースの記事執筆指示（JSONエラーを永久追放するデリミタ方式）
+    const sysPrompt = `あなたは日本の優秀な副業・在宅ワークアドバイザー「コウジ」です。
+Bさん（リサーチャー）が発案したテーマ「\${seedCategory}」について、初心者向けの実践手順を1から丁寧に解説する傑作コラムを執筆してください。
+出力はJSON形式ではなく、必ず以下の区切り文字（デリミタ）を入れて、プレーンテキストのみで出力してください（マークダウンのコードブロック \`\`\` 等で囲わないでください）。
 
-    const userPrompt = `Invent an amazing, highly practical AI side-hustle concept based on "${seedCategory}", and write the full Japanese guide in JSON format.`;
+[TITLE]
+ここにタイトル（最大40文字。「\${seedNameClean}」を必ず盛り込み、初心者を引きつける魅力的な日本語タイトル）
+[SLUG]
+ここにURL用の英語スラッグ（英数字とハイフンのみ、例: koji-sidehustle-123）
+[SUMMARY]
+ここに100文字程度の簡潔な要約
+[CATEGORY]
+登録するカテゴリ名（例: 副業ノウハウ、在宅ワーク、ネットビジネス）
+[TAGS]
+タグ（半角カンマ区切り、例: 在宅ワーク,初心者,ブログ）
+[IMAGE_PROMPT]
+カバー画像生成用の「英語のプロンプト」（テーマ「\${seedNameClean}」を元に、明るく現代的なコワーキングスペースやデスクワーク、またはテーマに関連する美麗な3Dイラストの英語指示。例: A cozy and bright 3D render illustration representing the theme of \${seedNameClean}...）
+[CONTENT]
+ここから詳しい記事本文を書いてください。
+導入部分では、読者のために必ず「\${seedNameClean}」が一体何であるのかを詳しく丁寧に解説・紹介してください。その後、副業や在宅ワークに論理的かつ自然に結びつける構成にしてください。
+4章（安全に稼ぐためのルール・確定申告）や5章（コウジのアドバイス）も、定型文を一切使わず、このテーマに特化した独自の意見や言葉だけで、毎回1から完全に新しく執筆してください。`;
+
+    const userPrompt = `Invent an amazing, highly practical AI side-hustle concept based on "${seedCategory}", and write the full Japanese guide using the plain-text delimiter format.`;
     let blogData: any;
 
     try {
@@ -60,18 +67,39 @@ export async function GET(req: Request) {
             { role: 'user', content: userPrompt }
           ],
           model: 'openai', // 爆速モデル
-          jsonMode: true
+          seed: seed
         })
       });
 
       if (aiText.ok) {
-        // 余分なマークダウンマーク（ ```json ）を削るクレンジング処理
-        const rawJsonText = await aiText.text();
-        const startIndex = rawJsonText.indexOf('{');
-        const endIndex = rawJsonText.lastIndexOf('}');
-        if (startIndex === -1 || endIndex === -1) throw new Error('No valid JSON found');
-        const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
-        blogData = JSON.parse(cleanJson);
+        const rawText = await aiText.text();
+        
+        // 正規表現を使って各項目を安全に切り分ける（JSONパースエラーが100%起きません）
+        const titleMatch = rawText.match(/\[TITLE\]\s*([\s\S]*?)\s*\[SLUG\]/i);
+        const slugMatch = rawText.match(/\[SLUG\]\s*([\s\S]*?)\s*\[SUMMARY\]/i);
+        const summaryMatch = rawText.match(/\[SUMMARY\]\s*([\s\S]*?)\s*\[CATEGORY\]/i);
+        const categoryMatch = rawText.match(/\[CATEGORY\]\s*([\s\S]*?)\s*\[TAGS\]/i);
+        const tagsMatch = rawText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[IMAGE_PROMPT\]/i);
+        const imagePromptMatch = rawText.match(/\[IMAGE_PROMPT\]\s*([\s\S]*?)\s*\[CONTENT\]/i);
+        const contentMatch = rawText.match(/\[CONTENT\]\s*([\s\S]*)/i);
+        
+        if (titleMatch && slugMatch && summaryMatch && contentMatch) {
+          const category = categoryMatch ? categoryMatch[1].trim() : '副業ノウハウ';
+          const parsedTags = tagsMatch ? tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean) : [seedNameClean];
+          const imagePromptStr = imagePromptMatch ? imagePromptMatch[1].trim() : `A stunning 3D render illustration representing the theme of ${seedNameClean}`;
+
+          blogData = {
+            title: titleMatch[1].trim(),
+            slug: slugMatch[1].trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-'),
+            summary: summaryMatch[1].trim(),
+            content: contentMatch[1].trim(),
+            category: category,
+            tags: parsedTags,
+            imagePrompt: imagePromptStr
+          };
+        } else {
+          throw new Error('デリミタパースに失敗しました。フォールバックを作動させます。');
+        }
       } else {
         throw new Error('AI Server responded with non-OK status');
       }
@@ -156,7 +184,7 @@ export async function GET(req: Request) {
       }));
     }
 
-    return NextResponse.json({ success: true, data: { source: 'multi_agent_collaboration', researchedTopic: seedCategory, title: blogData.title, slug: blogData.slug, cover_image: coverUrl } });
+    return NextResponse.json({ success: true, data: { source: 'multi_agent_delimiter_collaboration', researchedTopic: seedCategory, title: blogData.title, slug: blogData.slug, cover_image: coverUrl } });
   } catch (err: any) {
     console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -211,13 +239,13 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
 * **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**
    本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する「実務」です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。
 * **副業収入が年間20万円を超えたら確定申告を行う**
-   副業で得た所得（年間収入からサーバー代やツール代などの経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。
+   副業で得た所得（年間収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。
 
 ---
 
 ### コウジのアドバイス
 
-AIが普及することで「個人の仕事が奪われる」と不安視されることもありますが、現実に起きているのは**「AIを使いこなす個人が、AIを使わないプロを圧倒する」**という下克上のような現象です。
+新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。
 
 千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
 
