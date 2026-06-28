@@ -1,22 +1,42 @@
 ﻿// app/layout.tsx
-import React from 'react';
+import type { Metadata } from 'next';
+import './globals.css'; // グローバルCSSへのインポート（パスやファイル名が異なる場合は適宜調整してください）
+
+export const metadata: Metadata = {
+  title: {
+    default: "情報マーケット | 副業・在宅ワークのお宝コラム",
+    template: "%s | 情報マーケット"
+  },
+  description: "副業、在宅ワーク、安全な稼ぎ方を、アドバイザーのコウジが厳選して届けるお宝情報コラムサイト。初心者向けの実践ステップと安全なネットビジネスの見分け方を解説します。",
+  metadataBase: new URL("https://www.jouhoumarket.com"),
+  openGraph: {
+    title: "情報マーケット",
+    description: "副業、在宅ワーク、安全な稼ぎ方を、アドバイザーのコウジが厳選して届けるお宝情報コラムサイト。初心者向けの実践ステップと安全なネットビジネスの見分け方を解説します。",
+    type: "website",
+    locale: "ja_JP",
+    url: "https://www.jouhoumarket.com",
+    siteName: "情報マーケット",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "情報マーケット",
+    description: "副業、在宅ワーク、安全な稼ぎ方を、アドバイザーのコウジが厳選して届けるお宝情報コラムサイト。",
+  }
+};
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="ja">
       <head>
-        <link rel="icon" href="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop" />
-        <link rel="apple-touch-icon" href="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop" />
-        <meta property="og:title" content="Bob's Daily Insights" />
-        <meta property="og:description" content="Global search trends and breaking stories, analytically curated by Bob." />
-        <meta property="og:image" content="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=500&auto=format&fit=crop" />
-        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6901281127037715" crossOrigin="anonymous"></script>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </head>
-      <body>{children}</body>
+      <body style={{ margin: 0, backgroundColor: '#ffffff', color: '#333333' }}>
+        {children}
+      </body>
     </html>
   );
 }
