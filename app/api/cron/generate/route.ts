@@ -39,7 +39,7 @@ const SAFE_SIDE_HUSTLE_KEYWORDS = [
   'ストックフォト 写真販売副業',
   'kindle出版 印税生活のリアル',
   '電子書籍の作り方 初心者向け',
-  'ライティングの構成案 作成手順',
+  'ライティング of 構成案 作成手順',
   '成果が出るアフィリエイト広告の貼り方',
   '副業での開業届 提出タイミング',
   'クラウドワークスで初案件を受注するコツ',
@@ -125,7 +125,7 @@ export async function GET(req: Request) {
 
     const seed = Math.floor(Math.random() * 9999999);
 
-    // 2. Geminiに「副業コウジ仕様」のコラム執筆を依頼
+    // 2. AIに「副業コウジ仕様」のコラム執筆を依頼（openaiモデルに設定して超高速・高安定化）
     const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"Japanese Category (e.g., 副業ノウハウ, 在宅ワーク, ネットビジネス)","tags":["string"],"imagePrompt":"string"}. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, a friendly and expert personal finance and side-hustle advisor in Japan. Your article MUST follow this structure: ' +
       '1) Introduction: Warmly explain WHAT the subject/keyword is in detail in fluent Japanese. ' +
@@ -147,7 +147,7 @@ export async function GET(req: Request) {
             { role: 'system', content: sysPrompt },
             { role: 'user', content: userPrompt }
           ],
-          model: 'gemini',
+          model: 'openai', // 👈 openai に設定（非常に高速で動作が安定します）
           jsonMode: true
         })
       });
@@ -274,7 +274,7 @@ function generateFallbackPayload(keyword: string) {
 
   const markdownContent = `### はじめに：今話題の「${keyword}」について解説
 
-こんにちは！副業アドバイザーのコウジです。最近、インターネットやSNS上で**「${keyword}」**というキーワードが大きな注目を集めています。実は、こうした急上昇する最新トレンドや話題のテーマには、私たちが在宅ワークや副業で新しい収入源を作るための「ヒント」がたくさん隠されています。
+こんにちは！副業アドバイザー of コウジです。最近、インターネットやSNS上で**「${keyword}」**というキーワードが大きな注目を集めています。実は、こうした急上昇する最新トレンドや話題のテーマには、私たちが在宅ワークや副業で新しい収入源を作るための「ヒント」がたくさん隠されています。
 
 今回は、この最新トレンドをテーマに、初心者でも安全にオンラインで稼ぐための具体的なアイデアと実践方法をわかりやすく解説します。
 
