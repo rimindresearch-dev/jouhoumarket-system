@@ -2,7 +2,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { supabase } from '../../../lib/supabase'; // パスが異なる場合は適宜調整してください
+import { supabase } from '../../../lib/supabase';
 
 export const revalidate = 0;
 
@@ -48,7 +48,14 @@ function renderMarkdownToHtml(markdown: string) {
 
 export default async function PostPage({ params }: PostPageProps) {
   const resolvedParams = await params;
-  const decodedSlug = decodeURIComponent(resolvedParams.slug);
+  
+  // タイムアウト・半切れURL対策：デコードエラー時にも絶対にサーバーを落とさない安全処理
+  let decodedSlug = '';
+  try {
+    decodedSlug = decodeURIComponent(resolvedParams.slug);
+  } catch (e) {
+    decodedSlug = resolvedParams.slug; // デコード失敗時は生のスラッグをそのまま使用
+  }
   const encodedSlug = encodeURIComponent(decodedSlug);
 
   // 一時的なバグ防止のため、該当記事のIDを事前に取得

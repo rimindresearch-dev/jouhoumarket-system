@@ -32,7 +32,7 @@ export async function GET(req: Request) {
     const seedCategory = AI_SEED_CATEGORIES[Math.floor(Math.random() * AI_SEED_CATEGORIES.length)];
     const seedNameClean = seedCategory.split('（')[0]; // 安全なテキスト抽出
 
-    // 2. 超具体的・事実ベースの記事執筆指示
+    // 2. 超具体的・事実ベースの記事執筆指示（URLを安全な半角英数字に固定）
     const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"string","tags":["string"],"imagePrompt":"string"}. ' +
       'STRICT DUAL-AGENT COLLABORATION RULES:\n' +
       '1) Act as AI Agent B (Researcher Brain): First, internally brainstorm and invent one extremely specific, trendy, and highly realistic AI side-hustle concept for 2026 (e.g. using Suno to sell custom sound assets, or using HeyGen to automate recruiting videos, or ChatGPT for local business translation). Avoid generic "blogging" or "freelancing" clichés. This invented concept is your "Research Theme".\n' +
@@ -43,6 +43,7 @@ export async function GET(req: Request) {
       '- Actionable Step-by-Step Guide: Write an extremely practical, easy-to-follow, step-by-step Japanese guide on how to actually start, execute, and monetize this specific side gig.\n' +
       '- Safety, Tax & Compliance: Remind readers in Japanese about tax filing (kakutei shinkoku) when side income exceeds 200,000 yen, and warn them to avoid high-priced scams.\n' +
       '- Koji\'s Take: Conclude with Koji\'s encouraging, friendly closing advice in Japanese.\n' +
+      'STRICT SLUG RULE: You MUST output a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens (e.g. "ai-video-shorts-monetize", "kindle-illust-publishing"). NEVER output Japanese characters in the slug.\n' +
       'STRICT IMAGE PROMPT RULE: You MUST write a custom, highly specific imagePrompt in English representing the theme of the article. For example, if it is about childrens book publishing, describe colorful illustration book covers on a tablet. If it is about audio synthesized podcasts, describe a premium microphone with neon soundwaves. DO NOT generate simple office desks. ' +
       'STRICT LANGUAGE RULE: You MUST write the entire JSON response (title, summary, content, category, tags) strictly in 100% fluent, natural, professional Japanese (です・ます調). Output raw JSON only. Seed: ' + seed;
 
@@ -80,19 +81,18 @@ export async function GET(req: Request) {
     }
 
     // 3. 重複ガード（タイトル）
-    // 万が一AIが出力したタイトルが空の場合でもエラーを吐かせない安全フォールバック
     const finalTitle = blogData.title || `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
     const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', finalTitle).limit(1).maybeSingle();
     if (dup) return NextResponse.json({ success: true, message: 'Duplicate post skipped' });
 
     // スラッグが既存のものと重複する場合はランダムな末尾を付与、かつ最大200文字に制限
-    const rawSlug = blogData.slug || `ai-sidehustle-${seed}`;
-    let slug = rawSlug.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '');
-    slug = slug.substring(0, 200); // 255文字制限対策の安全切り取り
+    // ※完全英数字への置換・安全策
+    let slug = (blogData.slug || 'ai-sidehustle').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/(^-|-$)/g, '');
+    slug = slug.substring(0, 150) || `ai-sidehustle-${seed}`; // 万が一のために完全英数字のフォールバックを完備
     
     const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', slug).limit(1).maybeSingle();
     if (dupSlug) {
-      slug = (slug.substring(0, 190)) + '-' + Math.floor(Math.random() * 1000);
+      slug = (slug.substring(0, 140)) + '-' + Math.floor(Math.random() * 1000);
     }
 
     // 4. カバー画像を生成してCloudflare R2にアップロード
@@ -118,9 +118,7 @@ export async function GET(req: Request) {
 
     // 5. カテゴリの取得または新規作成
     let catId: string;
-    // 255文字制限対策：カテゴリ名を最大50文字に制限
     const categoryName = (blogData.category || '副業ノウハウ').substring(0, 50);
-    // 255文字制限対策：カテゴリのスラッグ（URL）を最大200文字に制限
     const catSlug = encodeURIComponent(categoryName.toLowerCase()).substring(0, 200);
 
     const { data: existingCat } = await supabaseAdmin.from('categories').select('id').eq('slug', catSlug).limit(1).maybeSingle();
@@ -139,7 +137,7 @@ export async function GET(req: Request) {
     // 本文が空の場合のフォールバック
     const finalContent = blogData.content || `### はじめに\n\n最新の${seedCategory}の可能性について分かりやすく解説します。`;
 
-    // 6. Supabaseに記事データを保存し、IDを新しく取得（絶対にNULLエラーを吐かせない最強の防衛策！）
+    // 6. Supabaseに記事データを保存し、IDを新しく取得
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: finalTitle, 
       slug: slug, 
@@ -157,14 +155,12 @@ export async function GET(req: Request) {
     if (Array.isArray(blogData.tags)) {
       await Promise.all(blogData.tags.map(async (t: string) => {
         if (!t) return;
-        // 255文字制限対策：タグのスラッグ（URL）を最大200文字に制限
         const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
         let tId: string;
         const { data: extTag } = await supabaseAdmin.from('tags').select('id').eq('slug', tSlug).limit(1).maybeSingle();
         if (extTag) {
           tId = extTag.id;
         } else {
-          // 255文字制限対策：タグ名を最大50文字に制限
           const tagName = t.substring(0, 50);
           const { data: nTag, error: tErr } = await supabaseAdmin.from('tags').insert({ name: tagName, slug: tSlug }).select('id').single();
           if (tErr) throw tErr;
@@ -183,7 +179,7 @@ export async function GET(req: Request) {
 
 // 日本語の自動フォールバックコラム作成関数（万が一の時用）
 function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
-  const safeSlug = encodeURIComponent(seedCategory.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'side-hustle';
+  const safeSlug = 'fallback-' + Math.floor(Math.random() * 10000);
   
   const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
   const summary = `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
@@ -207,7 +203,7 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
 \n\n### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」\n\n
 自宅から安全に最初の一歩を踏み出すための具体的な流れです。\n\n
 1. **AIツールを実際に触って「サンプル」を作ってみる**\n
-   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で動画のサンプルを3〜5本作成してみます。AI의指示に慣れることが一番の近道です。\n
+   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で動画のサンプルを3〜5本作成してみます。AIの指示に慣れることが一番の近道です。\n
 2. **クラウドソーシングでの「お仕事獲得」**\n   「クラウドワークス」や「ココナラ」に登録し、作成したサンプルをアピールして、Webライター、ロゴ作成、動画編集などの案件に応募します。AIを使えば数分の一の時間で納品できるため、効率よく高い利益率を確保できます。\n
 3. **自社メディアでの「資産化」**\n   依頼を受けて稼ぐだけでなく、作成した電子書籍をAmazon Kindleで出版したり、作成したショート動画をTikTokに投稿して広告収入を狙うなど、将来的に自動で収入が入り続ける仕組みを構築します。\n\n
 ---
