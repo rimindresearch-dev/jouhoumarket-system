@@ -19,7 +19,7 @@ const AI_SEED_CATEGORIES = [
   'AIデジタル電子書籍出版（Kindle絵本, 教材作成, ChatGPTノウハウ本）'
 ];
 
-export async function GET(req: Request) {
+eexport async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     if (searchParams.get('secret') !== process.env.SUPABASE_SERVICE_ROLE_KEY || !supabaseAdmin) {
@@ -163,7 +163,7 @@ export async function GET(req: Request) {
 }
 
 // 日本語の自動フォールバックコラム作成関数（万が一の時用）
-function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
+ffunction generateFallbackPayload(seedCategory: string, seedNameClean: string) {
   const safeSlug = encodeURIComponent(seedCategory.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'side-hustle';
   
   const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
