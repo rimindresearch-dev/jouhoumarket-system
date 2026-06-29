@@ -1,6 +1,4 @@
-﻿# 1. 新しい記事の構成テンプレートに100%準拠した自動生成プログラム（route.ts）を定義します
-$RouteCode = @'
-// app/api/cron/generate/route.ts
+﻿// app/api/cron/generate/route.ts
 import { NextResponse } from 'next/server';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client } from '../../../../lib/r2';
@@ -30,72 +28,29 @@ export async function GET(req: Request) {
 
     const seed = Math.floor(Math.random() * 9999999);
 
-    // ==========================================
-    // 【通信1：エージェントBさん】
-    // 最先端AI副業の「具体的で読者を引きつける記事タイトル」と「カテゴリ」「英語スラッグ」の企画に特化
-    // ==========================================
-    let bData: { title: string; category: string; slug: string; imagePrompt: string } | null = null;
-    
-    try {
-      const bPrompt = 'You are Agent B, the chief AI Trend Researcher and chief editor in Japan. ' +
-        'Your job is to invent ONE extremely specific, highly practical, and trendy AI/automation-related side-hustle article title for 2026. ' +
-        'CRITICAL RULE: The title MUST use concrete numbers, earning data, or a shocking/surprising hook (e.g. "ChatGPTを使って完全未経験から初月5万円稼いだ具体的な手順", "なぜ私は画像生成AIの副業で一度失敗したのか？真実のロードマップ"). ' +
-        'Output strictly a raw JSON object matching this schema: ' +
-        '{"title": "Shocking or Concrete Japanese Title with Numbers", "category": "Japanese Category Name", "slug": "english-url-safe-slug-using-hyphens", "imagePrompt": "A highly detailed English image prompt representing the unique theme of the article, highly detailed, 3D render"}';
+    // 1. 今回のAIの「研究テーマ」となる大カテゴリをランダムに1つ選択
+    const seedCategory = AI_SEED_CATEGORIES[Math.floor(Math.random() * AI_SEED_CATEGORIES.length)];
+    const seedNameClean = seedCategory.split('（')[0]; // 安全なテキスト抽出
 
-      const bTextResponse = await fetch('https://text.pollinations.ai/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [
-            { role: 'user', content: bPrompt }
-          ],
-          model: 'openai',
-          jsonMode: true
-        })
-      });
+    // 2. 超具体的・事実ベースの記事執筆指示（ワンパス・マルチエージェント協調）
+    const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"string","tags":["string"],"imagePrompt":"string"}. ' +
+      'STRICT DUAL-AGENT COLLABORATION RULES:\n' +
+      '1) Act as AI Agent B (Researcher Brain): First, internally brainstorm and invent one extremely specific, trendy, and highly realistic AI side-hustle concept for 2026 (e.g. using Suno to sell custom sound assets, or using HeyGen to automate recruiting videos, or ChatGPT for local business translation). Avoid generic "blogging" or "freelancing" clichés. This invented concept is your "Research Theme".\n' +
+      '2) Act as AI Agent C (Expert Writer Koji): Now, write a masterpiece guide about that "Research Theme" you just invented, strictly from the perspective of Koji, a friendly Japanese side-hustle expert.\n' +
+      'Your article content MUST follow this structure in Japanese:\n' +
+      '- Introduction & Fact/Case Study: Warmly introduce the specific AI tool/concept. You MUST explain a realistic success case study (e.g. how a complete beginner earned money using this specific tech stack) in fluent Japanese. Give real tool names!\n' +
+      '- Required Tools (The Tech Stack): List the exact, real-world AI and digital tools needed (e.g., ChatGPT, Midjourney, CapCut, Suno, Notion) and what they do.\n' +
+      '- Actionable Step-by-Step Guide: Write an extremely practical, easy-to-follow, step-by-step Japanese guide on how to actually start, execute, and monetize this specific side gig.\n' +
+      '- Safety, Tax & Compliance: Remind readers in Japanese about tax filing (kakutei shinkoku) when side income exceeds 200,000 yen, and warn them to avoid high-priced scams.\n' +
+      '- Koji\'s Take: Conclude with Koji\'s encouraging, friendly closing advice in Japanese.\n' +
+      'STRICT IMAGE PROMPT RULE: You MUST write a custom, highly specific imagePrompt in English representing the theme of the article. For example, if it is about childrens book publishing, describe colorful illustration book covers on a tablet. If it is about audio synthesized podcasts, describe a premium microphone with neon soundwaves. DO NOT generate simple office desks. ' +
+      'STRICT LANGUAGE RULE: You MUST write the entire JSON response (title, summary, content, category, tags) strictly in 100% fluent, natural, professional Japanese (です・ます調). Output raw JSON only. Seed: ' + seed;
 
-      if (bTextResponse.ok) {
-        const rawJsonText = await bTextResponse.text();
-        const startIndex = rawJsonText.indexOf('{');
-        const endIndex = rawJsonText.lastIndexOf('}');
-        if (startIndex !== -1 && endIndex !== -1) {
-          bData = JSON.parse(rawJsonText.substring(startIndex, endIndex + 1));
-        }
-      }
-    } catch (e) {
-      console.warn('Agent B failed to brainstorm topic. Using fallback topic.');
-    }
-
-    // Bさんが失敗した場合は、予備のテーマを適用
-    const finalBData = bData || {
-      title: 'ChatGPTを使って完全未経験から副業初月に5万円を稼ぎ出した具体的な手順',
-      category: 'ネットビジネス',
-      slug: 'chatgpt-side-hustle-5ten-thousand',
-      imagePrompt: 'A beautiful bright modern office setup with dual monitors, clean coding lines, 3D render, warm lighting'
-    };
-
-    // ==========================================
-    // 【通信2：エージェントCさん（執筆コウジ）】
-    // Bさんの考案したタイトルに基づき、指定の「6段階テンプレート」に従って魂のコラムを執筆する
-    // ==========================================
-    const sysPrompt = 'You are Koji (Cさん), a friendly, honest, and expert personal finance and AI automation side-hustle advisor in Japan. ' +
-      `Your planning team (Agent B) has given you the article title: "${finalBData.title}". ` +
-      'Your absolute mission is to write a highly practical, comprehensive, and engaging Japanese blog article (です・ます調) based on this title. ' +
-      'You MUST strictly follow this 6-step article structure template:\n\n' +
-      '1) Title & Intro Hook: Start directly with the article body. The very first 3 lines must clearly state WHO this article is for and grab the reader with concrete numbers or surprising hooks. Align perfectly with the search intent.\n' +
-      '2) Problem & Empathy (問題提起・共感): Verbally articulate the actual struggles, doubts, and worries that the target reader is currently facing. Make them feel "Koji really understands my pain!" so they do not close the page.\n' +
-      '3) Conclusion First (結論を先出し): To prevent bounce rates, clearly state "What you will learn from this article" as a clean bulleted list of 3 to 5 key takeaways. Give them a solid reason to read the rest.\n' +
-      '4) Body: Steps/Case Study (本文：ステップ・比較・体験談): Explain the actual step-by-step roadmap or dynamic case study of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion, ElevenLabs) and write detailed, concrete workflows.\n' +
-      '5) Caution & Failure Patterns (注意点・失敗パターン): To gain massive trust from the readers, write about the common pitfalls, why people fail at this, and how to avoid them. This removes any generic marketing-fluff feel.\n' +
-      '6) Summary & Next Actions (まとめ＋次のアクション): Summarize the key points in 3 neat bullet points, and encourage the reader to take their very first action (such as trying a free tool, visiting the contact form, or reading another guide).\n\n' +
-      'STRICT FORMAT RULE: Output ONLY the raw Markdown article text (minimum 600 words). Do not output JSON. Do not wrap in markdown codeblocks. Do not include H1 tag for the title since it is already rendered by the page layout. Start directly with the content. Seed: ' + seed;
-
-    const userPrompt = `Please write the complete, masterpiece side-hustle guide article following the 6-step template based on the title: "${finalBData.title}".`;
-    let articleContent = '';
+    const userPrompt = `Invent an amazing, highly practical AI side-hustle concept based on "${seedCategory}", and write the full Japanese guide in JSON format.`;
+    let blogData: any;
 
     try {
-      const cTextResponse = await fetch('https://text.pollinations.ai/', {
+      const aiText = await fetch('https://text.pollinations.ai/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -103,38 +58,41 @@ export async function GET(req: Request) {
             { role: 'system', content: sysPrompt },
             { role: 'user', content: userPrompt }
           ],
-          model: 'openai',
-          seed: seed
+          model: 'openai', // 爆速モデル
+          jsonMode: true
         })
       });
 
-      if (cTextResponse.ok) {
-        articleContent = (await cTextResponse.text()).trim();
-        // 前後にマークダウンブロック ``` や ```html が入ってしまった場合のクレンジング
-        articleContent = articleContent.replace(/^```[a-zA-Z]*/gm, '').replace(/```$/gm, '').trim();
+      if (aiText.ok) {
+        // 余分なマークダウンマーク（ ```json ）を削るクレンジング処理
+        const rawJsonText = await aiText.text();
+        const startIndex = rawJsonText.indexOf('{');
+        const endIndex = rawJsonText.lastIndexOf('}');
+        if (startIndex === -1 || endIndex === -1) throw new Error('No valid JSON found');
+        const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
+        blogData = JSON.parse(cleanJson);
       } else {
-        throw new Error('Agent C (Koji) failed to respond.');
+        throw new Error('AI Server responded with non-OK status');
       }
     } catch (apiError) {
-      console.warn('Agent C failed to write. Generating fallback markdown.');
-      articleContent = `### 1. タイトル＆冒頭フック\n\n完全未経験からでも、最新のAIツールを活用すれば「副業初月で5万円」は十分に狙える現実的な数字です。この記事は、「スキルがないから在宅ワークは無理」と諦めているあなたのためのロードマップです。`;
+      console.warn('AI生成プロセスでエラーが起きたため、安全用の日本語フォールバックを起動します:', apiError);
+      blogData = generateFallbackPayload(seedCategory, seedNameClean);
     }
 
     // 3. 重複ガード（タイトル）
-    const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', finalBData.title).limit(1).maybeSingle();
+    const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', blogData.title).limit(1).maybeSingle();
     if (dup) return NextResponse.json({ success: true, message: 'Duplicate post skipped' });
 
     // スラッグが既存のものと重複する場合はランダムな末尾を付与
-    let slug = finalBData.slug.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '');
-    const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', slug).limit(1).maybeSingle();
+    const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', blogData.slug).limit(1).maybeSingle();
     if (dupSlug) {
-      slug = slug + '-' + Math.floor(Math.random() * 1000);
+      blogData.slug = blogData.slug + '-' + Math.floor(Math.random() * 1000);
     }
 
-    // 4. カバー画像を生成してCloudflare R2にアップロード（ファイル名は英数字のみ）
+    // 4. カバー画像を生成してCloudflare R2にアップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
-      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(finalBData.imagePrompt + ', modern design style, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
+      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', modern design style, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
       const imgRes = await fetch(imgUrl);
       
       if (imgRes.ok) {
@@ -153,7 +111,7 @@ export async function GET(req: Request) {
 
     // 5. カテゴリの取得または新規作成
     let catId: string;
-    const categoryName = finalBData.category || '副業ノウハウ';
+    const categoryName = blogData.category || '副業ノウハウ';
     const catSlug = encodeURIComponent(categoryName.toLowerCase());
 
     const { data: existingCat } = await supabaseAdmin.from('categories').select('id').eq('slug', catSlug).limit(1).maybeSingle();
@@ -167,10 +125,10 @@ export async function GET(req: Request) {
 
     // 6. Supabaseに記事データを保存
     const { error: postError } = await supabaseAdmin.from('posts').insert({
-      title: finalBData.title, 
-      slug: slug, 
-      summary: finalBData.title + 'をテーマに、AIを活用して初心者から安全に稼ぎ出す手順を、副業アドバイザーコウジがロードマップ形式で分かりやすく解説します。', 
-      content: articleContent, 
+      title: blogData.title, 
+      slug: blogData.slug, 
+      summary: blogData.summary, 
+      content: blogData.content, 
       cover_image_url: coverUrl, 
       category_id: catId, 
       status: 'published', 
@@ -179,23 +137,99 @@ export async function GET(req: Request) {
     
     if (postError) throw postError;
 
-    return NextResponse.json({ success: true, data: { source: 'new_template_agent_pipeline', title: finalBData.title, slug, cover_image: coverUrl } });
+    // 7. タグの紐付け処理
+    if (Array.isArray(blogData.tags)) {
+      await Promise.all(blogData.tags.map(async (t: string) => {
+        if (!t) return;
+        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'tag-' + Math.floor(Math.random() * 1000);
+        let tId: string;
+        const { data: extTag } = await supabaseAdmin.from('tags').select('id').eq('slug', tSlug).limit(1).maybeSingle();
+        if (extTag) {
+          tId = extTag.id;
+        } else {
+          const { data: nTag, error: tErr } = await supabaseAdmin.from('tags').insert({ name: t, slug: tSlug }).select('id').single();
+          if (tErr) throw tErr;
+          tId = nTag.id;
+        }
+        await supabaseAdmin.from('post_tags').insert({ post_id: newPost.id, tag_id: tId });
+      }));
+    }
+
+    return NextResponse.json({ success: true, data: { source: 'optimized_one_pass_agent', title: blogData.title, slug: blogData.slug, cover_image: coverUrl } });
   } catch (err: any) {
     console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
-// 緊急用フォールバック
-function generateFallbackPayload() {
+// 日本語の自動フォールバックコラム作成関数（万が一の時用）
+function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
+  const safeSlug = encodeURIComponent(seedCategory.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'side-hustle';
+  
+  const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
+  const summary = `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
+
+  const markdownContent = `### 1. はじめに：AIを活用した「${seedNameClean}」とは？
+
+こんにちは！副業アドバイザーのコウジです。今回は、今まさにビジネス界隈で大きな話題を集めている、最新のAIツールを活用した**「${seedCategory}」**について解説します。
+
+近年、AI技術の進化によって、これまで専門スキルが必要だった「動画編集」「デザイン作成」「書籍出版」といったお仕事を、個人が数時間でハイクオリティにこなせる時代が到来しました。実際に、副業未経験からスタートした多くのサラリーマンや主婦の方が、AIを相棒にすることで**「初月から数万円、3ヶ月以内に月10万円以上」の安定した成果**を叩き出しています。
+
+---
+
+### 2. 稼ぐために必要な「ツールの組み合わせ（Tech Stack）」
+
+この副業を成立させるために使用する、具体的かつすべて無料で始められるAI・デザインツールは以下の通りです。
+
+1. **文章・企画案の作成：ChatGPT (OpenAI) / Claude**
+   * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。
+2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**
+   * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。
+3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**
+   * 綺麗なテロップ（字幕）の自動挿入や、AIによる超リアルな日本語ナレーション（吹き替え）の作成を、自動でほぼワンクリックで行います。
+
+---
+
+### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」
+
+自宅から安全に最初の一歩を踏み出すための具体的な流れです。
+
+1. **AIツールを実際に触って「サンプル」を作ってみる**
+   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で短いコラム記事や動画のサンプルを3〜5本作成してみます。AIの指示（プロンプト）に慣れることが一番の近道です。
+2. **クラウドソーシングでの「お仕事獲得」**
+   「クラウドワークス」や「ココナラ」に登録し、作成したサンプルをアピールして、Webライター、ロゴ作成、動画編集などの案件に応募します。AIを使えば数分の一の時間で納品できるため、効率よく高い利益率を確保できます。
+3. **自社メディアでの「資産化」**
+   依頼を受けて稼ぐだけでなく、作成した電子書籍をAmazon Kindleで出版したり、作成したショート動画をTikTokに投稿して広告収入を狙うなど、将来的に自動で収入が入り続ける仕組みを構築します。
+
+---
+
+### 4. 安全に稼ぐためのルールと確定申告のポイント
+
+副業を安全に楽しむために、必ず守るべき最重要事項です。
+
+* **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**
+   本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する "実務" です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。
+* **副業収入が年間20万円を超えたら確定申告を行う**
+   副業での所得（年間収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。
+
+---
+
+### コウジのアドバイス
+
+新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。
+
+千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
+
+  // フォールバック用の動的画像指示
+  const dynamicImagePrompt = `A stunning and high-tech 3D render illustration representing the workspace theme of ${seedNameClean}, cozy soft lighting, modern tablet display with colorful UI, highly detailed`;
+
   return {
-    title: 'ChatGPTを使って完全未経験から副業初月に5万円を稼ぎ出した具体的な手順',
+    title: title,
+    slug: safeSlug + '-' + Math.floor(Math.random() * 1000),
+    summary: summary,
+    content: markdownContent,
     category: '副業ノウハウ',
-    slug: 'chatgpt-side-hustle-fallback-' + Math.floor(Math.random() * 1000),
-    imagePrompt: 'A beautiful workspace theme with neon colors'
+    tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
+    imagePrompt: dynamicImagePrompt
   };
 }
-'@
-
-# 2. 安全に上書き保存を実行します
-$RouteCode | Out-File -LiteralPath "app/api/cron/generate/route.ts" -Encoding utf8
