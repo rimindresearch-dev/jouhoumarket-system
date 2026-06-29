@@ -19,7 +19,7 @@ const AI_SEED_CATEGORIES = [
   'AIデジタル電子書籍出版（Kindle絵本, 教材作成, ChatGPTノウハウ本）'
 ];
 
-eexport async function GET(req: Request) {
+export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     if (searchParams.get('secret') !== process.env.SUPABASE_SERVICE_ROLE_KEY || !supabaseAdmin) {
@@ -92,7 +92,7 @@ eexport async function GET(req: Request) {
     // 4. カバー画像を生成してCloudflare R2にアップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
-      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', modern design style, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
+      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', modern graphic design, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
       const imgRes = await fetch(imgUrl);
       
       if (imgRes.ok) {
@@ -124,7 +124,7 @@ eexport async function GET(req: Request) {
     }
 
     // 6. Supabaseに記事データを保存
-    const { error: postError } = await supabaseAdmin.from('posts').insert({
+    const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: blogData.title, 
       slug: blogData.slug, 
       summary: blogData.summary, 
@@ -133,7 +133,7 @@ eexport async function GET(req: Request) {
       category_id: catId, 
       status: 'published', 
       published_at: new Date().toISOString()
-    });
+    }).select('id').single();
     
     if (postError) throw postError;
 
@@ -163,7 +163,7 @@ eexport async function GET(req: Request) {
 }
 
 // 日本語の自動フォールバックコラム作成関数（万が一の時用）
-ffunction generateFallbackPayload(seedCategory: string, seedNameClean: string) {
+function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
   const safeSlug = encodeURIComponent(seedCategory.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'side-hustle';
   
   const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
@@ -220,7 +220,7 @@ ffunction generateFallbackPayload(seedCategory: string, seedNameClean: string) {
 
 千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
 
-  // フォールバック用の動的画像指示
+  // フィードバック用の動的画像指示
   const dynamicImagePrompt = `A stunning and high-tech 3D render illustration representing the workspace theme of ${seedNameClean}, cozy soft lighting, modern tablet display with colorful UI, highly detailed`;
 
   return {
@@ -228,7 +228,7 @@ ffunction generateFallbackPayload(seedCategory: string, seedNameClean: string) {
     slug: safeSlug + '-' + Math.floor(Math.random() * 1000),
     summary: summary,
     content: markdownContent,
-    category: '副業ノウハウ',
+    category: selectedTopic.category || '副業ノウハウ',
     tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
     imagePrompt: dynamicImagePrompt
   };
