@@ -83,16 +83,19 @@ export async function GET(req: Request) {
     const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', blogData.title).limit(1).maybeSingle();
     if (dup) return NextResponse.json({ success: true, message: 'Duplicate post skipped' });
 
-    // スラッグが既存のものと重複する場合はランダムな末尾を付与
-    const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', blogData.slug).limit(1).maybeSingle();
+    // スラッグが既存のものと重複する場合はランダムな末尾を付与、かつ最大200文字に制限
+    let slug = blogData.slug.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '');
+    slug = slug.substring(0, 200); // 255文字制限対策の安全切り取り
+    
+    const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', slug).limit(1).maybeSingle();
     if (dupSlug) {
-      blogData.slug = blogData.slug + '-' + Math.floor(Math.random() * 1000);
+      slug = (slug.substring(0, 190)) + '-' + Math.floor(Math.random() * 1000);
     }
 
     // 4. カバー画像を生成してCloudflare R2にアップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
-      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', modern graphic design, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
+      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', modern design style, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
       const imgRes = await fetch(imgUrl);
       
       if (imgRes.ok) {
@@ -111,8 +114,10 @@ export async function GET(req: Request) {
 
     // 5. カテゴリの取得または新規作成
     let catId: string;
-    const categoryName = blogData.category || '副業ノウハウ';
-    const catSlug = encodeURIComponent(categoryName.toLowerCase());
+    // 255文字制限対策：カテゴリ名を最大50文字に制限
+    const categoryName = (blogData.category || '副業ノウハウ').substring(0, 50);
+    // 255文字制限対策：カテゴリのスラッグ（URL）を最大200文字に制限
+    const catSlug = encodeURIComponent(categoryName.toLowerCase()).substring(0, 200);
 
     const { data: existingCat } = await supabaseAdmin.from('categories').select('id').eq('slug', catSlug).limit(1).maybeSingle();
     if (existingCat) {
@@ -123,17 +128,20 @@ export async function GET(req: Request) {
       catId = newCategory.id;
     }
 
+    // 255文字制限対策：要約（summary）を最大250文字に制限
+    const parsedSummary = (blogData.summary || '').substring(0, 250);
+
     // 6. Supabaseに記事データを保存
-    const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
+    const { error: postError } = await supabaseAdmin.from('posts').insert({
       title: blogData.title, 
-      slug: blogData.slug, 
-      summary: blogData.summary, 
+      slug: slug, 
+      summary: parsedSummary || (blogData.title + 'をテーマに、AIを活用して初心者から安全に稼ぎ出す手順を、副業アドバイザーコウジがロードマップ形式で分かりやすく解説します。').substring(0, 250), 
       content: blogData.content, 
       cover_image_url: coverUrl, 
       category_id: catId, 
       status: 'published', 
       published_at: new Date().toISOString()
-    }).select('id').single();
+    });
     
     if (postError) throw postError;
 
@@ -141,13 +149,16 @@ export async function GET(req: Request) {
     if (Array.isArray(blogData.tags)) {
       await Promise.all(blogData.tags.map(async (t: string) => {
         if (!t) return;
-        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'tag-' + Math.floor(Math.random() * 1000);
+        // 255文字制限対策：タグのスラッグ（URL）を最大200文字に制限
+        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
         let tId: string;
         const { data: extTag } = await supabaseAdmin.from('tags').select('id').eq('slug', tSlug).limit(1).maybeSingle();
         if (extTag) {
           tId = extTag.id;
         } else {
-          const { data: nTag, error: tErr } = await supabaseAdmin.from('tags').insert({ name: t, slug: tSlug }).select('id').single();
+          // 255文字制限対策：タグ名を最大50文字に制限
+          const tagName = t.substring(0, 50);
+          const { data: nTag, error: tErr } = await supabaseAdmin.from('tags').insert({ name: tagName, slug: tSlug }).select('id').single();
           if (tErr) throw tErr;
           tId = nTag.id;
         }
@@ -164,48 +175,47 @@ export async function GET(req: Request) {
 
 // 日本語の自動フォールバックコラム作成関数（万が一の時用）
 function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
-  const safeSlug = encodeURIComponent(seedCategory.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'side-hustle';
+  const safeSlug = encodeURIComponent(seedCategory.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'side-hustle';
   
   const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
   const summary = `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
 
-  // 文字切れ（バッファ制限）を完全に防ぐために、文字列を短く分割して安全に結合します
-  const markdownContent = `### 1. はじめに：AIを活用した「${seedNameClean}」とは？\n\n` +
-    `こんにちは！副業アドバイザーのコウジです。最近、インターネットやSNS上で**「${seedCategory}」**というキーワードが大きな注目を集めています。` +
-    `実は、こうした急上昇する最新トレンドや話題のテーマには、私たちが在宅ワークや副業で新しい収入源を作るための「ヒント」が隠されています。\n\n` +
-    `近年、AI技術の進化によって、これまで専門スキルが必要だったお仕事が、個人が数時間でハイクオリティにこなせる時代が到来しました。実際に、` +
-    `副業未経験からスタートした多くのサラリーマンや主婦の方が、AIを相棒にすることで「初月から数万円、3ヶ月以内に月10万円以上」の安定した成果を叩き出しています。\n\n` +
-    `---` +
-    `\n\n### 2. 稼ぐために必要な「ツールの組み合わせ（Tech Stack）」\n\n` +
-    `この副業を成立させるために使用する、具体的かつすべて無料で始められるAI・デザインツールは以下の通りです。\n\n` +
-    `1. **文章・企画案の作成：ChatGPT (OpenAI) / Claude**\n` +
-    `   * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。\n` +
-    `2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**\n` +
-    `   * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。\n` +
-    `3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**\n` +
-    `   * 綺麗なテロップ（字幕）の自動挿入や、AIによる超リアルな日本語ナレーション（吹き替え）の作成を自動で行います。\n\n` +
-    `---` +
-    `\n\n### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」\n\n` +
-    `自宅から安全に最初の一歩を踏み出すための具体的な流れです。\n\n` +
-    `1. **AIツールを実際に触って「サンプル」を作ってみる**\n` +
-    `   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で動画のサンプルを3〜5本作成してみます。AIの指示に慣れることが一番の近道です。\n` +
-    `2. **クラウドソーシングでの「お仕事獲得」**\n` +
-    `   「クラウドワークス」や「ココナラ」に登録し、作成したサンプルをアピールして、Webライター、ロゴ作成、動画編集などの案件に応募します。AIを使えば数分の一の時間で納品できるため、効率よく高い利益率を確保できます。\n` +
-    `3. **自社メディアでの「資産化」**\n` +
-    `   依頼を受けて稼ぐだけでなく、作成した電子書籍をAmazon Kindleで出版したり、作成したショート動画をTikTokに投稿して広告収入を狙うなど、将来的に自動で収入が入り続ける仕組みを構築します。\n\n` +
-    `---` +
-    `\n\n### 4. 安全に稼ぐためのルールと確定申告のポイント\n\n` +
-    `副業を安全に楽しむために、必ず守るべき最重要事項です。\n\n` +
-    `* **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**\n` +
-    `   本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する "実務" です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。\n` +
-    `* **副業収入が年間20万円を超えたら確定申告を行う**\n` +
-    `   副業での所得（年間収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。\n\n` +
-    `---` +
-    `\n\n### コウジのアドバイス\n\n` +
-    `新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。\n\n` +
-    `千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
+  const markdownContent = `### 1. はじめに：AIを活用した「${seedNameClean}」とは？
 
-  // バッファ制限を回避するために、画像指示も短く分割します
+こんにちは！副業アドバイザーのコウジです。最近、インターネットやSNS上で**「${seedCategory}」**というキーワードが大きな注目を集めています。
+実は、こうした急上昇する最新トレンドや話題のテーマには、私たちが在宅ワークや副業で新しい収入源を作るための「ヒント」が隠されています。\n\n
+近年、AI技術の進化によって、これまで専門スキルが必要だったお仕事が、個人が数時間でハイクオリティにこなせる時代が到来しました。実際に、
+副業未経験からスタートした多くのサラリーマンや主婦の方が、AIを相棒にすることで「初月から数万円、3ヶ月以内に月10万円以上」の安定した成果を叩き出しています。\n\n
+---
+\n\n### 2. 稼ぐために必要な「ツールの組み合わせ（Tech Stack）」\n\n
+この副業を成立させるために使用する、具体的かつすべて無料で始められるAI・デザインツールは以下の通りです。\n\n
+1. **文章・企画案の作成：ChatGPT (OpenAI) / Claude**\n
+   * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。\n
+2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**\n
+   * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。\n
+3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**\n
+   * 綺麗なテロップ（字幕）の自動挿入や、AIによる超リアルな日本語ナレーション（吹き替え）の作成を自動で行います。\n\n
+---
+\n\n### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」\n\n
+自宅から安全に最初の一歩を踏み出すための具体的な流れです。\n\n
+1. **AIツールを実際に触って「サンプル」を作ってみる**\n
+   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で動画のサンプルを3〜5本作成してみます。AIの指示に慣れることが一番の近道です。\n
+2. **クラウドソーシングでの「お仕事獲得」**\n
+   「クラウドワークス」や「ココナラ」に登録し、作成したサンプルをアピールして、Webライター、ロゴ作成、動画編集などの案件に応募します。AIを使えば数分の一の時間で納品できるため、効率よく高い利益率を確保できます。\n
+3. **自社メディアでの「資産化」**\n
+   依頼を受けて稼ぐだけでなく、作成した電子書籍をAmazon Kindleで出版したり、作成したショート動画をTikTokに投稿して広告収入を狙うなど、将来的に自動で収入が入り続ける仕組みを構築します。\n\n
+---
+\n\n### 4. 安全に稼ぐためのルールと確定申告のポイント\n\n
+副業を安全に楽しむために、必ず守るべき最重要事項です。\n\n
+* **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**\n
+   本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する "実務" です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。\n
+* **副業収入が年間20万円を超えたら確定申告を行う**\n
+   副業での所得（年間収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。\n\n
+---
+\n\n### コウジのアドバイス\n\n
+新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。\n\n
+千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
+
   const dynamicImagePrompt = "A stunning and high-tech 3D render illustration representing the workspace theme of " + 
     seedNameClean + ", cozy soft lighting, modern tablet display with colorful UI, highly detailed";
 
