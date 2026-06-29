@@ -114,9 +114,7 @@ export async function GET(req: Request) {
 
     // 5. カテゴリの取得または新規作成
     let catId: string;
-    // 255文字制限対策：カテゴリ名を最大50文字に制限
     const categoryName = (blogData.category || '副業ノウハウ').substring(0, 50);
-    // 255文字制限対策：カテゴリのスラッグ（URL）を最大200文字に制限
     const catSlug = encodeURIComponent(categoryName.toLowerCase()).substring(0, 200);
 
     const { data: existingCat } = await supabaseAdmin.from('categories').select('id').eq('slug', catSlug).limit(1).maybeSingle();
@@ -149,20 +147,18 @@ export async function GET(req: Request) {
     if (Array.isArray(blogData.tags)) {
       await Promise.all(blogData.tags.map(async (t: string) => {
         if (!t) return;
-        // 255文字制限対策：タグのスラッグ（URL）を最大200文字に制限
-        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, ''))).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
+        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
         let tId: string;
         const { data: extTag } = await supabaseAdmin.from('tags').select('id').eq('slug', tSlug).limit(1).maybeSingle();
         if (extTag) {
           tId = extTag.id;
         } else {
-          // 255文字制限対策：タグ名を最大50文字に制限
           const tagName = t.substring(0, 50);
           const { data: nTag, error: tErr } = await supabaseAdmin.from('tags').insert({ name: tagName, slug: tSlug }).select('id').single();
           if (tErr) throw tErr;
           tId = nTag.id;
         }
-        await supabaseAdmin.from('post_tags').insert({ post_id: newPost.id, tag_id: tId });
+        await supabaseAdmin.from('post_tags').insert({ post_id: newPost?.id || '', tag_id: tId });
       }));
     }
 
@@ -180,7 +176,6 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
   const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
   const summary = `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
 
-  // 文字切れ（バッファ制限）を完全に防ぐために、文字列を短く分割して安全に結合します
   const markdownContent = `### 1. はじめに：AIを活用した「${seedNameClean}」とは？\n\n` +
     `こんにちは！副業アドバイザーのコウジです。最近、インターネットやSNS上で**「${seedCategory}」**というキーワードが大きな注目を集めています。` +
     `実は、こうした急上昇する最新トレンドや話題のテーマには、私たちが在宅ワークや副業で新しい収入源を作るための「ヒント」が隠されています。\n\n` +
@@ -193,7 +188,7 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
     `   * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。\n` +
     `2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**\n` +
     `   * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。\n` +
-    `3. **動画・音声 of 編集：CapCut / Vrew / ElevenLabs**\n` +
+    `3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**\n` +
     `   * 綺麗なテロップ（字幕）の自動挿入や、AIによる超リアルな日本語ナレーション（吹き替え）の作成を自動で行います。\n\n` +
     `---` +
     `\n\n### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」\n\n` +
@@ -214,15 +209,16 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
     `新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。\n\n` +
     `千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
 
-  // フィードバック用の動的画像指示
-  const dynamicImagePrompt = `A stunning and high-tech 3D render illustration representing the workspace theme of ${seedNameClean}, cozy soft lighting, modern tablet display with colorful UI, highly detailed`;
+  // バッファ制限を回避するために、画像指示も短く分割します
+  const dynamicImagePrompt = "A stunning and high-tech 3D render illustration representing the workspace theme of " + 
+    seedNameClean + ", cozy soft lighting, modern tablet display with colorful UI, highly detailed";
 
   return {
     title: title,
     slug: safeSlug + '-' + Math.floor(Math.random() * 1000),
     summary: summary,
     content: markdownContent,
-    category: selectedTopic.category || '副業ノウハウ',
+    category: '副業ノウハウ',
     tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
     imagePrompt: dynamicImagePrompt
   };
