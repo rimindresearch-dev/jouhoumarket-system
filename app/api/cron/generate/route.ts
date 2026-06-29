@@ -32,22 +32,21 @@ export async function GET(req: Request) {
     const seedCategory = AI_SEED_CATEGORIES[Math.floor(Math.random() * AI_SEED_CATEGORIES.length)];
     const seedNameClean = seedCategory.split('（')[0]; // 安全なテキスト抽出
 
-    // 2. 超具体的・事実ベースの記事執筆指示（URLを安全な半角英数字に固定）
+    // 2. 超具体的・事実ベースの記事執筆指示（コウジ1人が指定の6段階構成で書き上げるように指示）
     const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"string","tags":["string"],"imagePrompt":"string"}. ' +
-      'STRICT DUAL-AGENT COLLABORATION RULES:\n' +
-      '1) Act as AI Agent B (Researcher Brain): First, internally brainstorm and invent one extremely specific, trendy, and highly realistic AI side-hustle concept for 2026 (e.g. using Suno to sell custom sound assets, or using HeyGen to automate recruiting videos, or ChatGPT for local business translation). Avoid generic "blogging" or "freelancing" clichés. This invented concept is your "Research Theme".\n' +
-      '2) Act as AI Agent C (Expert Writer Koji): Now, write a masterpiece guide about that "Research Theme" you just invented, strictly from the perspective of Koji, a friendly Japanese side-hustle expert.\n' +
-      'Your article content MUST follow this structure in Japanese:\n' +
-      '- Introduction & Fact/Case Study: Warmly introduce the specific AI tool/concept. You MUST explain a realistic success case study (e.g. how a complete beginner earned money using this specific tech stack) in fluent Japanese. Give real tool names!\n' +
-      '- Required Tools (The Tech Stack): List the exact, real-world AI and digital tools needed (e.g., ChatGPT, Midjourney, CapCut, Suno, Notion) and what they do.\n' +
-      '- Actionable Step-by-Step Guide: Write an extremely practical, easy-to-follow, step-by-step Japanese guide on how to actually start, execute, and monetize this specific side gig.\n' +
-      '- Safety, Tax & Compliance: Remind readers in Japanese about tax filing (kakutei shinkoku) when side income exceeds 200,000 yen, and warn them to avoid high-priced scams.\n' +
-      '- Koji\'s Take: Conclude with Koji\'s encouraging, friendly closing advice in Japanese.\n' +
+      'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, a friendly and expert personal finance and AI automation side-hustle advisor in Japan. ' +
+      `Your topic to write about today is: "${seedCategory}". ` +
+      'Your article content MUST strictly follow this 6-step marketing structure in fluent, professional Japanese (です・ます調):\n' +
+      '1) Title & Intro Hook: Start directly with the article body. First 3 lines must state WHO this article is for with concrete numbers or surprising hooks.\n' +
+      '2) Problem & Empathy (問題提起・共感): Verbally articulate the actual struggles and worries that the reader is currently facing.\n' +
+      '3) Conclusion First (結論を先出し): State "What you will learn" as a clean bulleted list of 3 to 5 key takeaways.\n' +
+      '4) Body: Steps/Case Study (本文：ステップ・比較・体験談): Explain the actual step-by-step roadmap of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion) and write detailed, concrete workflows.\n' +
+      '5) Caution & Failure Patterns (注意点・失敗パターン): Write about the common pitfalls, why people fail at this, and how to avoid them.\n' +
+      '6) Summary & Next Actions (まとめ＋次のアクション): Summarize the key points in 3 neat bullet points, and encourage the reader to take their very first action.\n\n' +
       'STRICT SLUG RULE: You MUST output a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens (e.g. "ai-video-shorts-monetize", "kindle-illust-publishing"). NEVER output Japanese characters in the slug.\n' +
-      'STRICT IMAGE PROMPT RULE: You MUST write a custom, highly specific imagePrompt in English representing the theme of the article. For example, if it is about childrens book publishing, describe colorful illustration book covers on a tablet. If it is about audio synthesized podcasts, describe a premium microphone with neon soundwaves. DO NOT generate simple office desks. ' +
-      'STRICT LANGUAGE RULE: You MUST write the entire JSON response (title, summary, content, category, tags) strictly in 100% fluent, natural, professional Japanese (です・ます調). Output raw JSON only. Seed: ' + seed;
+      'STRICT IMAGE PROMPT RULE: You MUST write a custom, highly specific imagePrompt in English representing the theme of the article. For example, if it is about childrens book publishing, describe colorful illustration book covers on a tablet. If it is about audio synthesized podcasts, describe a premium microphone with neon soundwaves. DO NOT generate simple office desks. Seed: ' + seed;
 
-    const userPrompt = `Invent an amazing, highly practical AI side-hustle concept based on "${seedCategory}", and write the full Japanese guide in JSON format.`;
+    const userPrompt = `Please write the complete, masterpiece side-hustle guide article following the 6-step template based on: "${seedCategory}".`;
     let blogData: any;
 
     try {
@@ -85,10 +84,9 @@ export async function GET(req: Request) {
     const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', finalTitle).limit(1).maybeSingle();
     if (dup) return NextResponse.json({ success: true, message: 'Duplicate post skipped' });
 
-    // スラッグが既存のものと重複する場合はランダムな末尾を付与、かつ最大200文字に制限
-    // ※完全英数字への置換・安全策
+    // スラッグを完全英数字に固定
     let slug = (blogData.slug || 'ai-sidehustle').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/(^-|-$)/g, '');
-    slug = slug.substring(0, 150) || `ai-sidehustle-${seed}`; // 万が一のために完全英数字のフォールバックを完備
+    slug = slug.substring(0, 150) || `ai-sidehustle-${seed}`;
     
     const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', slug).limit(1).maybeSingle();
     if (dupSlug) {
@@ -130,11 +128,8 @@ export async function GET(req: Request) {
       catId = newCategory.id;
     }
 
-    // 255文字制限対策：要約（summary）を最大250文字に制限
     const parsedSummary = (blogData.summary || '').substring(0, 250);
     const finalSummary = parsedSummary || (finalTitle + 'をテーマに、AIを活用して初心者から安全に稼ぎ出す手順を、副業アドバイザーコウジがロードマップ形式で分かりやすく解説します。').substring(0, 250);
-
-    // 本文が空の場合のフォールバック
     const finalContent = blogData.content || `### はじめに\n\n最新の${seedCategory}の可能性について分かりやすく解説します。`;
 
     // 6. Supabaseに記事データを保存し、IDを新しく取得
@@ -170,7 +165,7 @@ export async function GET(req: Request) {
       }));
     }
 
-    return NextResponse.json({ success: true, data: { source: 'optimized_one_pass_agent_with_safety_guard', title: finalTitle, slug: slug, cover_image: coverUrl } });
+    return NextResponse.json({ success: true, data: { source: 'single_agent_koji_pipeline', title: finalTitle, slug: slug, cover_image: coverUrl } });
   } catch (err: any) {
     console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -179,7 +174,7 @@ export async function GET(req: Request) {
 
 // 日本語の自動フォールバックコラム作成関数（万が一の時用）
 function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
-  const safeSlug = 'fallback-' + Math.floor(Math.random() * 10000);
+  const safeSlug = encodeURIComponent(seedCategory.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'side-hustle';
   
   const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
   const summary = `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
