@@ -131,8 +131,8 @@ export async function GET(req: Request) {
     // 255文字制限対策：要約（summary）を最大250文字に制限
     const parsedSummary = (blogData.summary || '').substring(0, 250);
 
-    // 6. Supabaseに記事データを保存
-    const { error: postError } = await supabaseAdmin.from('posts').insert({
+    // 6. Supabaseに記事データを保存し、IDを新しく取得（.select('id').single() を追加してバグを完全解消！）
+    const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: blogData.title, 
       slug: slug, 
       summary: parsedSummary || (blogData.title + 'をテーマに、AIを活用して初心者から安全に稼ぎ出す手順を、副業アドバイザーコウジがロードマップ形式で分かりやすく解説します。').substring(0, 250), 
@@ -141,16 +141,16 @@ export async function GET(req: Request) {
       category_id: catId, 
       status: 'published', 
       published_at: new Date().toISOString()
-    });
+    }).select('id').single();
     
     if (postError) throw postError;
 
-    // 7. タグの紐付け処理
+    // 7. タグの紐付け処理（newPost.id が安全に機能するようになります）
     if (Array.isArray(blogData.tags)) {
       await Promise.all(blogData.tags.map(async (t: string) => {
         if (!t) return;
         // 255文字制限対策：タグのスラッグ（URL）を最大200文字に制限
-        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
+        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, ''))).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
         let tId: string;
         const { data: extTag } = await supabaseAdmin.from('tags').select('id').eq('slug', tSlug).limit(1).maybeSingle();
         if (extTag) {
@@ -193,13 +193,13 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
     `   * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。\n` +
     `2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**\n` +
     `   * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。\n` +
-    `3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**\n` +
+    `3. **動画・音声 of 編集：CapCut / Vrew / ElevenLabs**\n` +
     `   * 綺麗なテロップ（字幕）の自動挿入や、AIによる超リアルな日本語ナレーション（吹き替え）の作成を自動で行います。\n\n` +
     `---` +
     `\n\n### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」\n\n` +
     `自宅から安全に最初の一歩を踏み出すための具体的な流れです。\n\n` +
     `1. **AIツールを実際に触って「サンプル」を作ってみる**\n` +
-    `   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で動画のサンプルを3〜5本作成してみます。AIの指示（プロンプト）に慣れることが一番の近道です。\n` +
+    `   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で動画のサンプルを3〜5本作成してみます。AIの指示に慣れることが一番の近道です。\n` +
     `2. **クラウドソーシングでの「お仕事獲得」**\n   「クラウドワークス」や「ココナラ」に登録し、作成したサンプルをアピールして、Webライター、ロゴ作成、動画編集などの案件に応募します。AIを使えば数分の一の時間で納品できるため、効率よく高い利益率を確保できます。\n` +
     `3. **自社メディアでの「資産化」**\n   依頼を受けて稼ぐだけでなく、作成した電子書籍をAmazon Kindleで出版したり、作成したショート動画をTikTokに投稿して広告収入を狙うなど、将来的に自動で収入が入り続ける仕組みを構築します。\n\n` +
     `---` +
@@ -214,16 +214,15 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
     `新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。\n\n` +
     `千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
 
-  // バッファ制限を回避するために、画像指示も短く分割します
-  const dynamicImagePrompt = "A stunning and high-tech 3D render illustration representing the workspace theme of " + 
-    seedNameClean + ", cozy soft lighting, modern tablet display with colorful UI, highly detailed";
+  // フィードバック用の動的画像指示
+  const dynamicImagePrompt = `A stunning and high-tech 3D render illustration representing the workspace theme of ${seedNameClean}, cozy soft lighting, modern tablet display with colorful UI, highly detailed`;
 
   return {
     title: title,
     slug: safeSlug + '-' + Math.floor(Math.random() * 1000),
     summary: summary,
     content: markdownContent,
-    category: '副業ノウハウ',
+    category: selectedTopic.category || '副業ノウハウ',
     tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
     imagePrompt: dynamicImagePrompt
   };
