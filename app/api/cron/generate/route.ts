@@ -7,17 +7,12 @@ import { supabaseAdmin } from '../../../../lib/supabase';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// AIが最先端の副業を発明するための「大カテゴリ（シード）」
-const AI_SEED_CATEGORIES = [
-  'AI動画クリエイター（TikTok, YouTube Shorts, HeyGen, CapCut）',
-  'AI画像・グラフィックデザイン（Midjourney, Canva, バナーデザイン, ロゴ制作）',
-  'AIテキストライティング（SEOブログ, クラウドソーシング, 電子書籍, 校正）',
-  'AI音声・音楽配信（音声データ入力, ボイスオーバー, Suno, ポッドキャスト）',
-  'AI翻訳・ローカライズ（多言語サイト制作, 字幕代行, 翻訳ライティング）',
-  'AIプログラミング・ノーコード（LP制作, WEBツール開発, Shopify構築）',
-  'Notion・業務効率化テンプレート（Notion販売, デジタルプランナー, Zapier自動化）',
-  'AIデジタル電子書籍出版（Kindle絵本, 教材作成, ChatGPTノウハウ本）'
-];
+// 文字コードやAIのブレを100%防ぎ、各セクションを安全に切り出す超強力なヘルパー関数
+function extractPart(text: string, tag: string): string {
+  const regex = new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)(?:\\s*\\[(?:TITLE|SLUG|SUMMARY|CATEGORY|TAGS|IMAGE_PROMPT|CONTENT)\\]|$)`, 'i');
+  const match = text.match(regex);
+  return match ? match[1].trim() : '';
+}
 
 export async function GET(req: Request) {
   try {
@@ -41,7 +36,7 @@ export async function GET(req: Request) {
     const targetTitle = queueData.title;
     const seed = Math.floor(Math.random() * 9999999);
 
-    // 2. 超具体的・事実ベースの記事執筆指示（JSONエラーを永久追放するデリミタプレーンテキスト方式）
+    // 2. 超具体的・事実ベースの記事執筆指示（文字切れを永久防止するプレーンテキストデリミタ方式）
     const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
       `Your theme today is: "${targetTitle}". ` +
@@ -87,28 +82,21 @@ export async function GET(req: Request) {
 
     const rawText = await aiText.text();
     
-    // 正規表現を使って各項目を安全に切り分ける（JSONパースエラーが100%起きません）
-    const titleMatch = rawText.match(/\[TITLE\]\s*([\s\S]*?)\s*\[SLUG\]/i);
-    const slugMatch = rawText.match(/\[SLUG\]\s*([\s\S]*?)\s*\[SUMMARY\]/i);
-    const summaryMatch = rawText.match(/\[SUMMARY\]\s*([\s\S]*?)\s*\[CATEGORY\]/i);
-    const categoryMatch = rawText.match(/\[CATEGORY\]\s*([\s\S]*?)\s*\[TAGS\]/i);
-    const tagsMatch = rawText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[IMAGE_PROMPT\]/i);
-    const imagePromptMatch = rawText.match(/\[IMAGE_PROMPT\]\s*([\s\S]*?)\s*\[CONTENT\]/i);
-    const contentMatch = rawText.match(/\[CONTENT\]\s*([\s\S]*)/i);
-
-    if (!titleMatch || !contentMatch) {
-      throw new Error('AI Response formatting failed');
-    }
-
-    const titleStr = titleMatch[1].trim() || targetTitle;
-    let slugStr = (slugMatch ? slugMatch[1].trim() : 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+    // 自作の安全抽出関数（extractPart）を使い、各セクションを切り出す（パースエラーが永久に起きません）
+    const titleStr = extractPart(rawText, 'TITLE') || targetTitle;
+    let slugStr = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
     slugStr = slugStr.substring(0, 150) || 'article-' + seed;
 
-    const summaryStr = (summaryMatch ? summaryMatch[1].trim() : '').substring(0, 240);
-    const categoryName = (categoryMatch ? categoryMatch[1].trim() : '副業ノウハウ').substring(0, 45);
+    const summaryStr = extractPart(rawText, 'SUMMARY').substring(0, 240);
+    const categoryName = (extractPart(rawText, 'CATEGORY') || '副業ノウハウ').substring(0, 45);
     const catSlug = encodeURIComponent(categoryName.toLowerCase()).substring(0, 200);
 
-    const imagePromptText = imagePromptMatch ? imagePromptMatch[1].trim() : `A stunning 3D render illustration representing the workspace theme of ${targetTitle}`;
+    const imagePromptText = extractPart(rawText, 'IMAGE_PROMPT') || `A stunning 3D render illustration representing the workspace theme of ${targetTitle}`;
+    const contentStr = extractPart(rawText, 'CONTENT');
+
+    if (!contentStr) {
+      throw new Error('AI Content generation failed or was empty.');
+    }
 
     // 3. 画像生成とR2アップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
@@ -133,12 +121,12 @@ export async function GET(req: Request) {
       catId = newCategory.id;
     }
 
-    // 6. Supabaseへ記事データを保存（不要なparsedSummaryの定義を削除してエラーを完全解消！）
+    // 5. Supabaseへ記事データを保存
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: titleStr,
       slug: slugStr,
       summary: summaryStr || (targetTitle + 'のロードマップを分かりやすく解説します。').substring(0, 240),
-      content: contentMatch[1].trim(),
+      content: contentStr,
       cover_image_url: coverUrl,
       category_id: catId,
       status: 'published',
@@ -147,9 +135,10 @@ export async function GET(req: Request) {
 
     if (postError) throw postError;
 
-    // 7. タグの紐付け処理
-    if (tagsMatch && tagsMatch[1]) {
-      const parsedTags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean);
+    // 6. タグの紐付け処理
+    const rawTags = extractPart(rawText, 'TAGS');
+    if (rawTags) {
+      const parsedTags = rawTags.split(',').map(t => t.trim()).filter(Boolean);
       await Promise.all(parsedTags.map(async (t: string) => {
         if (!t) return;
         const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
@@ -167,7 +156,7 @@ export async function GET(req: Request) {
       }));
     }
 
-    // 8. 処理が終わったタイトルを予約リストから自動削除
+    // 7. 処理が終わったタイトルを予約リストから自動削除
     await supabaseAdmin.from('title_queue').delete().eq('id', queueData.id);
 
     return NextResponse.json({ success: true, title: targetTitle });
