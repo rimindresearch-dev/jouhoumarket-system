@@ -7,18 +7,6 @@ import { supabaseAdmin } from '../../../../lib/supabase';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// AIが最先端の副業を発明するための「大カテゴリ（シード）」
-const AI_SEED_CATEGORIES = [
-  'AI動画クリエイター（TikTok, YouTube Shorts, HeyGen, CapCut）',
-  'AI画像・グラフィックデザイン（Midjourney, Canva, バナーデザイン, ロゴ制作）',
-  'AIテキストライティング（SEOブログ, クラウドソーシング, 電子書籍, 校正）',
-  'AI音声・音楽配信（音声データ入力, ボイスオーバー, Suno, ポッドキャスト）',
-  'AI翻訳・ローカライズ（多言語サイト制作, 字幕代行, 翻訳ライティング）',
-  'AIプログラミング・ノーコード（LP制作, WEBツール開発, Shopify構築）',
-  'Notion・業務効率化テンプレート（Notion販売, デジタルプランナー, Zapier自動化）',
-  'AIデジタル電子書籍出版（Kindle絵本, 教材作成, ChatGPTノウハウ本）'
-];
-
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -26,95 +14,67 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // 1. 予約リスト（title_queue）から一番古い未処理タイトルを1つ取得
+    const { data: queueData, error: queueError } = await supabaseAdmin
+      .from('title_queue')
+      .select('*')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (!queueData) {
+      return NextResponse.json({ success: true, message: '予約リストが空のため、執筆を待機しました。' });
+    }
+
+    const targetTitle = queueData.title;
     const seed = Math.floor(Math.random() * 9999999);
 
-    // 1. 今回のAIの「研究テーマ」となる大カテゴリをランダムに1つ選択
-    const seedCategory = AI_SEED_CATEGORIES[Math.floor(Math.random() * AI_SEED_CATEGORIES.length)];
-    const seedNameClean = seedCategory.split('（')[0]; // 安全なテキスト抽出
+    // 2. 指定された「6段階構成テンプレート」に従ってコウジが執筆するよう指示
+    const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 1000 words)","category":"string","tags":["string"],"imagePrompt":"string"}. ' +
+      'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
+      `Your theme today is: "${targetTitle}". ` +
+      'Your article content MUST strictly follow this exact 6-step structure in fluent Japanese (です・ます調):\n\n' +
+      'Step 1) Title & Intro Hook: Start directly with the article body. First 3 lines must state WHO this article is for with concrete numbers or surprising hooks.\n' +
+      'Step 2) Problem & Empathy (問題提起・共感): Articulate the target reader\'s real worries. Make them feel "Koji understands me!".\n' +
+      'Step 3) Conclusion First (結論を先出し): A clean bulleted list of 3-5 key takeaways of this article.\n' +
+      'Step 4) Body: Steps/Experience (本文：ステップ・比較・体験談): Explain the actual step-by-step roadmap of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion) and write detailed, concrete workflows.\n' +
+      'Step 5) Caution & Pitfalls (注意点・失敗パターン): Write about why people fail and how to avoid it. Build massive trust.\n' +
+      'Step 6) Summary & Action: 3-point summary and a clear first action step for the reader.\n\n' +
+      'STRICT SLUG RULE: Small lowercase English letters and hyphens only (e.g., "how-to-earn-50k", "fail-story-ai-hustle").\n' +
+      'STRICT IMAGE PROMPT RULE: Custom English prompt representing the article theme (vibrant, 3D render). Seed: ' + seed;
 
-    // 2. 超具体的・事実ベースの記事執筆指示（コウジ1人が指定の6段階構成で書き上げるように指示）
-    const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 600 words)","category":"string","tags":["string"],"imagePrompt":"string"}. ' +
-      'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, a friendly and expert personal finance and AI automation side-hustle advisor in Japan. ' +
-      `Your topic to write about today is: "${seedCategory}". ` +
-      'Your article content MUST strictly follow this 6-step marketing structure in fluent, professional Japanese (です・ます調):\n' +
-      '1) Title & Intro Hook: Start directly with the article body. First 3 lines must state WHO this article is for with concrete numbers or surprising hooks.\n' +
-      '2) Problem & Empathy (問題提起・共感): Verbally articulate the actual struggles and worries that the reader is currently facing.\n' +
-      '3) Conclusion First (結論を先出し): State "What you will learn" as a clean bulleted list of 3 to 5 key takeaways.\n' +
-      '4) Body: Steps/Case Study (本文：ステップ・比較・体験談): Explain the actual step-by-step roadmap of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion) and write detailed, concrete workflows.\n' +
-      '5) Caution & Failure Patterns (注意点・失敗パターン): Write about the common pitfalls, why people fail at this, and how to avoid them.\n' +
-      '6) Summary & Next Actions (まとめ＋次のアクション): Summarize the key points in 3 neat bullet points, and encourage the reader to take their very first action.\n\n' +
-      'STRICT SLUG RULE: You MUST output a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens (e.g. "ai-video-shorts-monetize", "kindle-illust-publishing"). NEVER output Japanese characters in the slug.\n' +
-      'STRICT IMAGE PROMPT RULE: You MUST write a custom, highly specific imagePrompt in English representing the theme of the article. For example, if it is about childrens book publishing, describe colorful illustration book covers on a tablet. If it is about audio synthesized podcasts, describe a premium microphone with neon soundwaves. DO NOT generate simple office desks. Seed: ' + seed;
+    const userPrompt = `Please write the absolute best masterpiece article for the title: "${targetTitle}" using the 6-step template.`;
 
-    const userPrompt = `Please write the complete, masterpiece side-hustle guide article following the 6-step template based on: "${seedCategory}".`;
-    let blogData: any;
+    const aiText = await fetch('https://text.pollinations.ai/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: userPrompt }],
+        model: 'openai',
+        jsonMode: true
+      })
+    });
 
-    try {
-      const aiText = await fetch('https://text.pollinations.ai/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [
-            { role: 'system', content: sysPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          model: 'openai', // 爆速モデル
-          jsonMode: true
-        })
-      });
+    const rawJsonText = await aiText.text();
+    const startIndex = rawJsonText.indexOf('{');
+    const endIndex = rawJsonText.lastIndexOf('}');
+    if (startIndex === -1 || endIndex === -1) throw new Error('AI Response Error');
+    const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
+    const blogData = JSON.parse(cleanJson);
 
-      if (aiText.ok) {
-        // 余分なマークダウンマーク（ ```json ）を削るクレンジング処理
-        const rawJsonText = await aiText.text();
-        const startIndex = rawJsonText.indexOf('{');
-        const endIndex = rawJsonText.lastIndexOf('}');
-        if (startIndex === -1 || endIndex === -1) throw new Error('No valid JSON found');
-        const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
-        blogData = JSON.parse(cleanJson);
-      } else {
-        throw new Error('AI Server responded with non-OK status');
-      }
-    } catch (apiError) {
-      console.warn('AI生成プロセスでエラーが起きたため、安全用の日本語フォールバックを起動します:', apiError);
-      blogData = generateFallbackPayload(seedCategory, seedNameClean);
-    }
-
-    // 3. 重複ガード（タイトル）
-    const finalTitle = blogData.title || `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
-    const { data: dup } = await supabaseAdmin.from('posts').select('id').eq('title', finalTitle).limit(1).maybeSingle();
-    if (dup) return NextResponse.json({ success: true, message: 'Duplicate post skipped' });
-
-    // スラッグを完全英数字に固定
-    let slug = (blogData.slug || 'ai-sidehustle').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/(^-|-$)/g, '');
-    slug = slug.substring(0, 150) || `ai-sidehustle-${seed}`;
-    
-    const { data: dupSlug } = await supabaseAdmin.from('posts').select('id').eq('slug', slug).limit(1).maybeSingle();
-    if (dupSlug) {
-      slug = (slug.substring(0, 140)) + '-' + Math.floor(Math.random() * 1000);
-    }
-
-    // 4. カバー画像を生成してCloudflare R2にアップロード
+    // 3. 画像生成とR2アップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
-      const imgPromptText = blogData.imagePrompt || `A stunning and high-tech 3D render illustration representing the workspace theme of ${seedNameClean}`;
-      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(imgPromptText + ', modern design style, vibrant masterpiece, high res') + '?width=1024&height=576&nologo=true&seed=' + seed;
+      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
       const imgRes = await fetch(imgUrl);
-      
       if (imgRes.ok) {
-        const filename = 'blog-covers/' + seed + '-' + Math.floor(Math.random() * 1000) + '.webp';
-        await r2Client.send(new PutObjectCommand({ 
-          Bucket: process.env.R2_BUCKET_NAME, 
-          Key: filename, 
-          Body: Buffer.from(await imgRes.arrayBuffer()), 
-          ContentType: 'image/webp' 
-        }));
+        const filename = `covers/${seed}.webp`;
+        await r2Client.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: filename, Body: Buffer.from(await imgRes.arrayBuffer()), ContentType: 'image/webp' }));
         coverUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL + '/' + filename;
       }
-    } catch { 
-      console.warn('Using fallback image due to fetch/upload failure'); 
-    }
+    } catch (e) { console.warn('Image fail'); }
 
-    // 5. カテゴリの取得または新規作成
+    // 4. カテゴリの取得または新規作成（255制限対応）
     let catId: string;
     const categoryName = (blogData.category || '副業ノウハウ').substring(0, 50);
     const catSlug = encodeURIComponent(categoryName.toLowerCase()).substring(0, 200);
@@ -129,24 +89,22 @@ export async function GET(req: Request) {
     }
 
     const parsedSummary = (blogData.summary || '').substring(0, 250);
-    const finalSummary = parsedSummary || (finalTitle + 'をテーマに、AIを活用して初心者から安全に稼ぎ出す手順を、副業アドバイザーコウジがロードマップ形式で分かりやすく解説します。').substring(0, 250);
-    const finalContent = blogData.content || `### はじめに\n\n最新の${seedCategory}の可能性について分かりやすく解説します。`;
 
-    // 6. Supabaseに記事データを保存し、IDを新しく取得
+    // 5. Supabaseへ記事データを保存（newPost.idが正しく機能するようにselect追加）
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
-      title: finalTitle, 
-      slug: slug, 
-      summary: finalSummary, 
-      content: finalContent, 
-      cover_image_url: coverUrl, 
-      category_id: catId, 
-      status: 'published', 
+      title: targetTitle,
+      slug: (blogData.slug || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-').substring(0, 150),
+      summary: parsedSummary || (targetTitle + 'のロードマップを分かりやすく解説します。').substring(0, 250),
+      content: blogData.content,
+      cover_image_url: coverUrl,
+      category_id: catId,
+      status: 'published',
       published_at: new Date().toISOString()
     }).select('id').single();
-    
+
     if (postError) throw postError;
 
-    // 7. タグの紐付け処理
+    // 6. タグの紐付け処理
     if (Array.isArray(blogData.tags)) {
       await Promise.all(blogData.tags.map(async (t: string) => {
         if (!t) return;
@@ -165,64 +123,11 @@ export async function GET(req: Request) {
       }));
     }
 
-    return NextResponse.json({ success: true, data: { source: 'single_agent_koji_pipeline', title: finalTitle, slug: slug, cover_image: coverUrl } });
+    // 7. 処理が終わったタイトルを予約リストから自動削除
+    await supabaseAdmin.from('title_queue').delete().eq('id', queueData.id);
+
+    return NextResponse.json({ success: true, title: targetTitle });
   } catch (err: any) {
-    console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
-}
-
-// 日本語の自動フォールバックコラム作成関数（万が一の時用）
-function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
-  const safeSlug = encodeURIComponent(seedCategory.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'side-hustle';
-  
-  const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
-  const summary = `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
-
-  const markdownContent = `### 1. はじめに：AIを活用した「${seedNameClean}」とは？
-
-こんにちは！副業アドバイザーのコウジです。最近、インターネットやSNS上で**「${seedCategory}」**というキーワードが大きな注目を集めています。
-実は、こうした急上昇する最新トレンドや話題のテーマには、私たちが在宅ワークや副業で新しい収入源を作るための「ヒント」が隠されています。\n\n
-近年、AI技術の進化によって、これまで専門スキルが必要だったお仕事が、個人が数時間でハイクオリティにこなせる時代が到来しました。実際に、
-副業未経験からスタートした多くのサラリーマンや主婦の方が、AIを相棒にすることで「初月から数万円、3ヶ月以内に月10万円以上」の安定した成果を叩き出しています。\n\n
----
-\n\n### 2. 稼ぐために必要な「ツールの組み合わせ（Tech Stack）」\n\n
-この副業を成立させるために使用する、具体的かつすべて無料で始められるAI・デザインツールは以下の通りです。\n\n
-1. **文章・企画案の作成：ChatGPT (OpenAI) / Claude**\n
-   * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。\n
-2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**\n
-   * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。\n
-3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**\n
-   * 綺麗なテロップ（字幕）の自動挿入や、AIによる超リアルな日本語ナレーション（吹き替え）の作成を自動で行います。\n\n
----
-\n\n### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」\n\n
-自宅から安全に最初の一歩を踏み出すための具体的な流れです。\n\n
-1. **AIツールを実際に触って「サンプル」を作ってみる**\n
-   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で動画のサンプルを3〜5本作成してみます。AIの指示に慣れることが一番の近道です。\n
-2. **クラウドソーシングでの「お仕事獲得」**\n   「クラウドワークス」や「ココナラ」に登録し、作成したサンプルをアピールして、Webライター、ロゴ作成、動画編集などの案件に応募します。AIを使えば数分の一の時間で納品できるため、効率よく高い利益率を確保できます。\n
-3. **自社メディアでの「資産化」**\n   依頼を受けて稼ぐだけでなく、作成した電子書籍をAmazon Kindleで出版したり、作成したショート動画をTikTokに投稿して広告収入を狙うなど、将来的に自動で収入が入り続ける仕組みを構築します。\n\n
----
-\n\n### 4. 安全に稼ぐためのルールと確定申告のポイント\n\n
-副業を安全に楽しむために、必ず守るべき最重要事項です。\n\n
-* **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**\n
-   本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する "実務" です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。\n
-* **副業収入が年間20万円を超えたら確定申告を行う**\n
-   副業での所得（年間収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。\n\n
----
-\n\n### コウジのアドバイス\n\n
-新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。\n\n
-千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
-
-  const dynamicImagePrompt = "A stunning and high-tech 3D render illustration representing the workspace theme of " + 
-    seedNameClean + ", cozy soft lighting, modern tablet display with colorful UI, highly detailed";
-
-  return {
-    title: title,
-    slug: safeSlug + '-' + Math.floor(Math.random() * 1000),
-    summary: summary,
-    content: markdownContent,
-    category: '副業ノウハウ',
-    tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
-    imagePrompt: dynamicImagePrompt
-  };
 }

@@ -1,153 +1,95 @@
 ﻿// app/admin/page.tsx
 'use client';
-
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabase';
 
 export default function AdminPage() {
   const [posts, setPosts] = useState<any[]>([]);
+  const [queue, setQueue] = useState<any[]>([]);
+  const [bulkTitles, setBulkTitles] = useState('');
   const [secret, setSecret] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  // 記事一覧を取得
-  async function fetchPosts() {
+  useEffect(() => { fetchAll(); }, []);
+
+  async function fetchAll() {
+    const { data: p } = await supabase.from('posts').select('*').order('published_at', { ascending: false });
+    const { data: q } = await supabase.from('title_queue').select('*').order('created_at', { ascending: true });
+    if (p) setPosts(p);
+    if (q) setQueue(q);
+  }
+
+  // タイトルの一括登録
+  async function handleAddTitles() {
+    if (!bulkTitles.trim()) {
+      alert('エラー：登録するタイトルを入力してください。');
+      return;
+    }
     setLoading(true);
-    const { data, error } = await supabase
-      .from('posts')
-      .select('*')
-      .order('published_at', { ascending: false });
-    
-    if (!error && data) {
-      setPosts(data);
+    const titleList = bulkTitles.split('\n').map(t => t.trim()).filter(t => t.length > 0);
+    const inserts = titleList.map(t => ({ title: t }));
+    const { error } = await supabase.from('title_queue').insert(inserts);
+    if (error) alert('登録エラー: ' + error.message);
+    else {
+      alert(titleList.length + '件のタイトルを予約リストに追加しました！');
+      setBulkTitles('');
+      fetchAll();
     }
     setLoading(false);
   }
 
-  useEffect(() => {
-    fetchPosts();
-  }, []);
-
-  // 削除ボタンクリック時の処理
-  async function handleDelete(postId: string, title: string) {
-    if (!secret) {
-      alert('エラー：管理者シークレットキー（SUPABASE_SERVICE_ROLE_KEY）を入力してください。');
-      return;
-    }
-
-    if (!confirm(`本当に「${title}」を削除しますか？この操作は取り消せません。`)) {
-      return;
-    }
-
-    setActionLoading(postId);
-
-    try {
-      const res = await fetch('/api/admin/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, secret })
-      });
-
-      const result = await res.json();
-
-      if (result.success) {
-        alert('記事を削除しました。');
-        fetchPosts(); // リストを再読込
-      } else {
-        alert('削除に失敗しました: ' + (result.error || '不明なエラー'));
-      }
-    } catch (err: any) {
-      alert('エラーが発生しました: ' + err.message);
-    } finally {
-      setActionLoading(null);
-    }
+  async function handleDelete(postId: string) {
+    if (!confirm('本当にこの記事を削除しますか？')) return;
+    await supabase.from('post_tags').delete().eq('post_id', postId);
+    await supabase.from('posts').delete().eq('id', postId);
+    fetchAll();
   }
 
   return (
     <div style={{ maxWidth: '900px', margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif', color: '#333' }}>
       <header style={{ borderBottom: '2px solid #eee', paddingBottom: '20px', marginBottom: '30px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: 0 }}>情報マーケット 管理用ダッシュボード</h1>
-        <p style={{ color: '#666', margin: '5px 0 0' }}>不要な自動生成記事の管理および削除を行えます。</p>
+        <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: 0 }}>情報マーケット 管理者ダッシュボード</h1>
+        <p style={{ color: '#666', margin: '5px 0 0' }}>渾身のタイトルを予約し、自動執筆させることができます。</p>
       </header>
-
-      {/* Security Input Card */}
-      <div style={{ backgroundColor: '#fafafa', borderRadius: '8px', padding: '20px', border: '1px solid #eee', marginBottom: '30px' }}>
-        <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#444', display: 'block', marginBottom: '8px' }}>
-          管理者シークレットキーを入力してください（SUPABASE_SERVICE_ROLE_KEY）：
-        </label>
-        <input 
-          type="password" 
-          placeholder="ey..." 
-          value={secret} 
-          onChange={(e) => setSecret(e.target.value)} 
-          style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '14px' }}
+      
+      {/* タイトル一括登録フォーム */}
+      <div style={{ backgroundColor: '#f0f7ff', padding: '25px', borderRadius: '12px', marginBottom: '40px', border: '2px solid #0070f3' }}>
+        <h2 style={{ margin: '0 0 15px', fontSize: '18px', fontWeight: 'bold' }}>📝 書きたいタイトルを1行ずつ一気に入力</h2>
+        <textarea 
+          placeholder="1行に1タイトルずつ入力してください。例：&#13;&#10;ChatGPTで月5万稼いだ方法&#13;&#10;なぜ私は副業に失敗したか"
+          value={bulkTitles}
+          onChange={(e) => setBulkTitles(e.target.value)}
+          style={{ width: '100%', height: '180px', padding: '12px', borderRadius: '8px', border: '1px solid #ccc', marginBottom: '15px', fontSize: '14px', boxSizing: 'border-box' }}
         />
-        <p style={{ color: '#888', fontSize: '12px', margin: '6px 0 0' }}>
-          ※お使いの .env.local にある `SUPABASE_SERVICE_ROLE_KEY` を入力することで、安全に削除処理をキックできます。
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>公開済みの記事一覧 ({posts.length}件)</h2>
-        <button 
-          onClick={fetchPosts} 
-          style={{ padding: '8px 15px', backgroundColor: '#eee', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
-        >
-          一覧を更新
+        <button onClick={handleAddTitles} disabled={loading} style={{ width: '100%', padding: '15px', backgroundColor: '#0070f3', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
+          {loading ? '登録中...' : 'これらのタイトルを予約リスト（キュー）に追加する'}
         </button>
       </div>
 
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>記事一覧を読み込み中...</div>
-      ) : posts.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#999', border: '1px dashed #ccc', borderRadius: '8px' }}>
-          公開中の記事はありません。
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          {posts.map((post) => (
-            <div 
-              key={post.id} 
-              style={{ display: 'flex', gap: '20px', alignItems: 'center', padding: '15px', border: '1px solid #eee', borderRadius: '8px', backgroundColor: '#fff' }}
-            >
-              {post.cover_image_url && (
-                <img 
-                  src={post.cover_image_url} 
-                  alt="" 
-                  style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px', flexShrink: 0, backgroundColor: '#f5f5f5' }} 
-                />
-              )}
-              <div style={{ flex: 1 }}>
-                <h3 style={{ fontSize: '16px', margin: '0 0 5px', fontWeight: 'bold' }}>{post.title}</h3>
-                <p style={{ color: '#888', fontSize: '12px', margin: 0 }}>
-                  公開日: {new Date(post.published_at).toLocaleString('ja-JP')} | スラッグ: {post.slug}
-                </p>
+      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '30px' }}>
+        <div style={{ flex: '1 1 300px', padding: '15px', border: '1px solid #eee', borderRadius: '8px', backgroundColor: '#fafafa' }}>
+          <h3 style={{ margin: '0 0 10px', fontSize: '16px', fontWeight: 'bold' }}>待機中のタイトル予約リスト ({queue.length}件)</h3>
+          <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {queue.map((q, idx) => (
+              <div key={q.id} style={{ fontSize: '13px', color: '#555', padding: '6px', borderBottom: '1px solid #eee' }}>
+                {idx + 1}. {q.title}
               </div>
-              <button 
-                onClick={() => handleDelete(post.id, post.title)}
-                disabled={actionLoading === post.id}
-                style={{ 
-                  padding: '8px 16px', 
-                  backgroundColor: actionLoading === post.id ? '#ccc' : '#e11d48', 
-                  color: '#fff', 
-                  border: 'none', 
-                  borderRadius: '4px', 
-                  cursor: 'pointer', 
-                  fontWeight: 'bold', 
-                  fontSize: '13px' 
-                }}
-              >
-                {actionLoading === post.id ? '削除中...' : '削除'}
-              </button>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      )}
+      </div>
 
-      <footer style={{ marginTop: '40px', borderTop: '1px solid #eee', paddingTop: '20px', textAlign: 'center' }}>
-        <Link href="/" style={{ color: '#0070f3', textDecoration: 'none', fontWeight: 'bold' }}>← ブログトップへ戻る</Link>
-      </footer>
+      <h2 style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '15px' }}>公開済みの記事一覧 ({posts.length}件)</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {posts.map(p => (
+          <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #eee', borderRadius: '8px' }}>
+            <span style={{ fontSize: '14px' }}>{p.title}</span>
+            <button onClick={() => handleDelete(p.id)} style={{ color: '#e11d48', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', fontWeight: 'bold' }}>削除</button>
+          </div>
+        ))}
+      </div>
+      <p style={{ marginTop: '30px', textAlign: 'center' }}><Link href="/" style={{ color: '#0070f3', fontWeight: 'bold', textDecoration: 'none' }}>← サイトの表示を確認する</Link></p>
     </div>
   );
 }
