@@ -37,6 +37,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json({ error: 'GEMINI_API_KEY is not configured in Vercel settings.' }, { status: 500 });
+    }
+
     const seed = Math.floor(Math.random() * 9999999);
 
     // 1. 予約リスト（title_queue）から一番古い未処理タイトル（ひな型テーマ）を1つ取得
@@ -51,17 +55,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, message: '予約リストが空のため、執筆を待機しました。' });
     }
 
-    const targetTitle = queueData.title; // ひな型テーマ（例：バナー作成代行）
+    const targetTitle = queueData.title;
 
-    // 2. 4段階構成テンプレートのプロンプト（タイトル、見出し、本文をすべてAIに自律的に考えさせます）
+    // 2. 指定された「4段階構成テンプレート」に厳格に沿ってコラムを執筆する指示
     const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
-      `Your raw draft theme today is: "${targetTitle}". ` +
+      `Your theme today is: "${targetTitle}". ` +
       'Your article content MUST strictly follow this exact 4-step structure in fluent Japanese (です・ます調) with custom attractive headings. ' +
       'Do NOT output literal boilerplate strings like "1. タイトル＆冒頭フック" or "2. 問題提起・共感ゾーン" as the Markdown headings. ' +
       'Instead, you MUST dynamically invent highly specific, catchy, and natural subheadings (using ### ) matching the content of each section.\n\n' +
       '[TITLE]\n' +
-      `Generate an extremely catchy, high-converting Japanese article title (including concrete numbers, earning data, or a shocking/surprising hook, e.g., "スマホ1台で完結！AIイラスト生成とLINEスタンプ販売で手堅く月3万円を稼ぐ極意") based on the raw draft theme: "${targetTitle}".\n` +
+      `Generate an extremely catchy, high-converting Japanese article title (including concrete numbers, earning data, or a shocking/surprising hook, e.g., "スマホ1台でできる！ChatGPTを活用してバナー作成代行で毎月3万円を得る方法") based on the raw draft theme: "${targetTitle}". Do NOT use "${targetTitle}" literally; expand it into a masterpiece title.\n` +
       '[SLUG]\n' +
       'Generate a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens.\n' +
       '[SUMMARY]\n' +
@@ -83,21 +87,31 @@ export async function GET(req: Request) {
       'Section 4) Body: Steps/Experience (Heading: Invent a highly catchy custom heading, e.g., "### 完全未経験から最短で売上を出すための実践的な3ステップ"): ' +
       'Explain the actual step-by-step roadmap of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion, Canva) and write detailed, concrete workflows. Do NOT write any summary or conclusion sections after this.';
 
-    const userPrompt = `Please brainstorm an amazing title and write the complete masterpiece article based on the draft theme: "${targetTitle}" using the 4-step template.`;
+    const userPrompt = `Please write the absolute best masterpiece article based on the draft theme: "${targetTitle}" using the 4-step template.`;
 
-    const aiText = await fetch('https://text.pollinations.ai/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: userPrompt }],
-        model: 'openai',
-        seed: seed,
-        max_tokens: 3000 // 最大文字数を解放
-      })
-    });
+    // 3. 【通信】公式の Google Gemini API へ直接アクセス
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: sysPrompt + '\n\n' + userPrompt }]
+            }
+          ]
+        })
+      }
+    );
 
-    const rawText = await aiText.text();
-    
+    if (!geminiRes.ok) {
+      throw new Error('Google Gemini API returned non-OK status: ' + geminiRes.status);
+    }
+
+    const geminiData = await geminiRes.json();
+    const rawText = geminiData.candidates[0].content.parts[0].text;
+
     // 自作の安全抽出関数（extractPart）でバグなく正確に切り出し
     const titleStr = extractPart(rawText, 'TITLE') || targetTitle; // AIが考えたタイトルを適用
     let slugStr = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
@@ -114,7 +128,7 @@ export async function GET(req: Request) {
       throw new Error('AI Content generation failed or was empty.');
     }
 
-    // 3. 画像生成とR2アップロード
+    // 4. 画像生成とR2アップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
       const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(imagePromptText + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
@@ -126,7 +140,7 @@ export async function GET(req: Request) {
       }
     } catch (e) { console.warn('Image fail'); }
 
-    // 4. カテゴリの取得または新規作成
+    // 5. カテゴリの取得または新規作成
     let catId: string;
     const { data: existingCat } = await supabaseAdmin.from('categories').select('id').eq('slug', catSlug).limit(1).maybeSingle();
     if (existingCat) {
@@ -139,7 +153,7 @@ export async function GET(req: Request) {
 
     const parsedSummary = summaryStr.substring(0, 250);
 
-    // 5. Supabaseへ記事データを保存（AIが考えた綺麗なタイトル titleStr で保存します）
+    // 6. Supabaseへ記事データを保存
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: titleStr,
       slug: slugStr,
@@ -153,7 +167,7 @@ export async function GET(req: Request) {
 
     if (postError) throw postError;
 
-    // 6. タグの紐付け処理
+    // 7. タグの紐付け処理
     const rawTags = extractPart(rawText, 'TAGS');
     if (rawTags) {
       const parsedTags = rawTags.split(',').map(t => t.trim()).filter(Boolean);
@@ -174,11 +188,29 @@ export async function GET(req: Request) {
       }));
     }
 
-    // 7. 処理が終わったタイトルを予約リストから自動削除
+    // 8. 処理が終わったタイトルを予約リストから自動削除
     await supabaseAdmin.from('title_queue').delete().eq('id', queueData.id);
 
     return NextResponse.json({ success: true, title: titleStr });
   } catch (err: any) {
+    console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+
+// 緊急用日本語フォールバック
+function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
+  const safeSlug = 'fallback-' + Math.floor(Math.random() * 10000);
+  return {
+    title: `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`,
+    summary: `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`,
+    content: `### 1. タイトル＆冒頭フック\n\n「副業初月で10万円を稼ぎ出す」という目標は、最新のAI技術を活用すれば、完全な未経験からでも十分に狙える現実的な数字です。`,
+    category: '副業ノウハウ',
+    tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
+    imagePrompt: `A stunning and high-tech 3D render illustration representing the workspace theme of ${seedNameClean}`
+  };
+}
+'@
+
+# 3. ファイルを上書き保存します
+$RouteCode | Out-File -LiteralPath "app/api/cron/generate/route.ts" -Encoding utf8
