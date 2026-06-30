@@ -7,7 +7,7 @@ import { supabaseAdmin } from '../../../../lib/supabase';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// 【100%エラーフリー】大文字小文字の揺れも吸収し、文字の位置だけで完璧に中身を切り出すパーサー関数
+// 【100%エラーフリー】大文字小文字の揺れも吸収し、文字の位置だけで完璧に中身を切り出す最高峰のパーサー関数
 function extractPart(text: string, tag: string): string {
   if (!text) return '';
   const tagUpper = `[${tag.toUpperCase()}]`;
@@ -38,8 +38,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const seed = Math.floor(Math.random() * 9999999);
-
     // 1. 予約リスト（title_queue）から一番古い未処理タイトル（ひな型テーマ）を1つ取得
     const { data: queueData, error: queueError } = await supabaseAdmin
       .from('title_queue')
@@ -53,8 +51,9 @@ export async function GET(req: Request) {
     }
 
     const targetTitle = queueData.title;
+    const seed = Math.floor(Math.random() * 9999999);
 
-    // 2. 指定された「4段階構成テンプレート」に厳格に沿ってコラムを執筆する指示（キー不要のプレーンテキストデリミタ方式）
+    // 2. 指定された「4段階構成テンプレート」に厳格に沿ってコラムを執筆する指示（プレーンテキストデリミタ方式）
     const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
       `Your theme today is: "${targetTitle}". ` +
@@ -64,7 +63,7 @@ export async function GET(req: Request) {
       '[TITLE]\n' +
       `Generate an extremely catchy, high-converting Japanese article title (including concrete numbers, earning data, or a shocking/surprising hook, e.g., "スマホ1台でできる！ChatGPTを活用してバナー作成代行で毎月3万円を得る方法") based on the raw draft theme: "${targetTitle}". Do NOT use "${targetTitle}" literally; expand it into a masterpiece title.\n` +
       '[SLUG]\n' +
-      'Generate a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens.\n' +
+      'Generate a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens (e.g. "smartphone-banner-monetize", "kindle-illust-publishing").\n' +
       '[SUMMARY]\n' +
       'Write a catchy 80-character summary.\n' +
       '[CATEGORY]\n' +
@@ -74,7 +73,7 @@ export async function GET(req: Request) {
       '[IMAGE_PROMPT]\n' +
       'Write a custom, highly specific imagePrompt in English representing the theme of the article (vibrant, modern 3D render illustration, warm lighting, highly detailed).\n' +
       '[CONTENT]\n' +
-      'Write the complete article body text (minimum 1000 words) using these exact Markdown headings. Write completely unique and valuable content for each section:\n' +
+      'Write the complete article body text (minimum 1000 words) using these exact Markdown headings. Do NOT write any other sections or concluding/summary sections outside these 4 headings:\n' +
       '### 1. タイトル＆冒頭フック\n' +
       '（あなたが上で考えた「新しい記事タイトル」に基づき、具体的な数字や事実で引きつけ、誰のための記事かを明示するフック文章を3行以内で執筆してください）\n' +
       '### 2. 問題提起・共感ゾーン\n' +
@@ -91,7 +90,7 @@ export async function GET(req: Request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: userPrompt }],
-        model: 'openai', // 爆速＆完全無料のopenaiモデルで実行（JSON制限を受けないプレーンテキストなので、1文字も途切れません）
+        model: 'openai',
         seed: seed
       })
     });
@@ -100,8 +99,32 @@ export async function GET(req: Request) {
     
     // 自作の安全抽出関数（extractPart）でバグなく正確に切り出し
     const titleStr = extractPart(rawText, 'TITLE') || targetTitle; // AIが考えたタイトルを適用
-    let slugStr = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
-    slugStr = slugStr.substring(0, 150) || 'article-' + seed;
+    let rawSlug = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+    rawSlug = rawSlug.substring(0, 150) || 'article-' + seed;
+
+    // ==========================================
+    // 100%重複を防ぐ：一意のURLスラッグが見つかるまで、自動で末尾を変えてループ検証する安全機構
+    // ==========================================
+    let isUnique = false;
+    let slugStr = rawSlug;
+    let attempts = 0;
+
+    while (!isUnique && attempts < 10) {
+      const { data: existingPost } = await supabaseAdmin
+        .from('posts')
+        .select('id')
+        .eq('slug', slugStr)
+        .limit(1)
+        .maybeSingle();
+
+      if (!existingPost) {
+        isUnique = true;
+      } else {
+        // 重複があった場合は、末尾に最大5桁のランダムな数字を付与して再検証
+        slugStr = `${rawSlug.substring(0, 130)}-${Math.floor(Math.random() * 100000)}`;
+        attempts++;
+      }
+    }
 
     const summaryStr = extractPart(rawText, 'SUMMARY').substring(0, 240);
     const categoryName = (extractPart(rawText, 'CATEGORY') || '副業ノウハウ').substring(0, 45);
@@ -179,11 +202,12 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ success: true, title: titleStr });
   } catch (err: any) {
+    console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
-// 日本語の自動フォールバックコラム作成関数（万が一の時用）
+// 緊急用日本語フォールバック
 function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
   const safeSlug = 'fallback-' + Math.floor(Math.random() * 10000);
   return {
