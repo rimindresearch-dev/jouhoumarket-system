@@ -37,6 +37,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const seed = Math.floor(Math.random() * 9999999);
+
     // 1. 予約リスト（title_queue）から一番古い未処理タイトル（ひな型テーマ）を1つ取得
     const { data: queueData, error: queueError } = await supabaseAdmin
       .from('title_queue')
@@ -50,13 +52,14 @@ export async function GET(req: Request) {
     }
 
     const targetTitle = queueData.title;
-    const seed = Math.floor(Math.random() * 9999999);
 
-    // 2. 超具体的・事実ベースの記事執筆指示（プロンプトの矛盾を完全に解消）
+    // 2. 指定された「4段階構成テンプレート」に厳格に沿ってコラムを執筆する指示
     const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
       `Your theme today is: "${targetTitle}". ` +
-      'Your article content MUST strictly follow this exact 4-step structure in fluent Japanese (です・ます調). Keep sentences concise, clear, and highly focused (total around 800 Japanese characters) to prevent output truncation.\n\n' +
+      'Your article content MUST strictly follow this exact 4-step structure in fluent Japanese (です・ます調) with custom attractive headings. ' +
+      'Do NOT output literal boilerplate strings like "1. タイトル＆冒頭フック" or "2. 問題提起・共感ゾーン" as the Markdown headings. ' +
+      'Instead, you MUST dynamically invent highly specific, catchy, and natural subheadings (using ### ) matching the content of each section.\n\n' +
       '[TITLE]\n' +
       `Generate an extremely catchy, high-converting Japanese article title (including concrete numbers, earning data, or a shocking/surprising hook, e.g., "スマホ1台でできる！ChatGPTを活用してバナー作成代行で毎月3万円を得る方法") based on the raw draft theme: "${targetTitle}". Do NOT use "${targetTitle}" literally; expand it into a masterpiece title.\n` +
       '[SLUG]\n' +
@@ -70,18 +73,17 @@ export async function GET(req: Request) {
       '[IMAGE_PROMPT]\n' +
       'Write a custom, highly specific imagePrompt in English representing the theme of the article (vibrant, modern 3D render illustration, warm lighting, highly detailed).\n' +
       '[CONTENT]\n' +
-      'Write the complete article body text using these 4 functional sections. Write completely unique and valuable content for each section.\n' +
-      'STRICT RULE: You MUST NOT output literal boilerplate strings like "タイトル＆冒頭フック" or "問題提起・共感ゾーン" as the Markdown headings. Instead, you MUST dynamically invent highly specific, catchy, and natural subheadings (using ### ) matching the content of each section.\n\n' +
+      'Write the complete article body text (minimum 1000 words) using these exact Markdown headings. Write completely unique and valuable content for each section:\n' +
       'Section 1) Introduction & Hook (Heading: None / No Markdown heading needed. Start directly with the hook paragraphs): ' +
-      'Write an Compelling introduction hook (3 lines or less) for your generated [TITLE]. State clearly WHO this is for with concrete numbers or surprising facts.\n' +
-      'Section 2) Problem & Empathy (Heading: You MUST invent a highly custom, unique, and natural Japanese heading, e.g., "### 「AIを使えば誰でも稼げる」の甘い罠と、手痛い失敗談"): ' +
+      'Write an extremely compelling introduction hook (3 lines or less) for your generated [TITLE]. State clearly WHO this article is for with concrete numbers or surprising facts.\n' +
+      'Section 2) Problem & Empathy (Heading: Invent a highly catchy custom heading, e.g., "### 「AIを使えば簡単に稼げる」の甘い罠と、手痛い失敗談"): ' +
       'Articulate the reader\'s real worries. Make them feel "Koji understands me!".\n' +
-      'Section 3) Conclusion First (Heading: You MUST invent a highly custom, unique, and natural Japanese heading, e.g., "### バナー副業で月15万円を確実に手にするための結論"): ' +
+      'Section 3) Conclusion First (Heading: Invent a highly catchy custom heading, e.g., "### バナーデザイン副業で月15万円を確実に手にするための結論"): ' +
       'A clean bulleted list of 3-5 key takeaways of this article, giving them the reason to read.\n' +
-      'Section 4) Body: Steps/Experience (Heading: You MUST invent a highly custom, unique, and natural Japanese heading, e.g., "### 完全未経験から最短で売上を出すための実践的な3ステップ"): ' +
+      'Section 4) Body: Steps/Experience (Heading: Invent a highly catchy custom heading, e.g., "### 完全未経験から最短で売上を出すための実践的な3ステップ"): ' +
       'Explain the actual step-by-step roadmap of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion, Canva) and write detailed, concrete workflows. Do NOT write any summary or conclusion sections after this.';
 
-    const userPrompt = `Please write the absolute best masterpiece article based on the draft theme: "${targetTitle}" using the 6-step plain-text delimiter template.`;
+    const userPrompt = `Please write the absolute best masterpiece article for the title: "${targetTitle}" using the 4-step plain-text delimiter template.`;
 
     const aiText = await fetch('https://text.pollinations.ai/', {
       method: 'POST',
@@ -178,4 +180,17 @@ export async function GET(req: Request) {
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
+}
+
+// 緊急用日本語フォールバック
+function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
+  const safeSlug = 'fallback-' + Math.floor(Math.random() * 10000);
+  return {
+    title: `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`,
+    summary: `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`,
+    content: `### 1. タイトル＆冒頭フック\n\n「副業初月で10万円を稼ぎ出す」という目標は、最新のAI技術を活用すれば、完全な未経験からでも十分に狙える現実的な数字です。`,
+    category: '副業ノウハウ',
+    tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
+    imagePrompt: `A stunning and high-tech 3D render illustration representing the workspace theme of ${seedNameClean}`
+  };
 }
