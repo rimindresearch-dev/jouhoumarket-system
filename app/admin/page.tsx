@@ -10,6 +10,7 @@ export default function AdminPage() {
   const [bulkTitles, setBulkTitles] = useState('');
   const [secret, setSecret] = useState('');
   const [loading, setLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -39,11 +40,34 @@ export default function AdminPage() {
     setLoading(false);
   }
 
-  async function handleDelete(postId: string) {
-    if (!confirm('本当にこの記事を削除しますか？')) return;
-    await supabase.from('post_tags').delete().eq('post_id', postId);
-    await supabase.from('posts').delete().eq('id', postId);
-    fetchAll();
+  // RLS制限を回避するため、安全なバックエンドAPI経由で記事を削除
+  async function handleDelete(postId: string, title: string) {
+    if (!secret) {
+      alert('エラー：管理者シークレットキー（SUPABASE_SERVICE_ROLE_KEY）を上の入力欄に入力してください。');
+      return;
+    }
+    if (!confirm(`本当に「${title}」を削除しますか？この操作は取り消せません。`)) return;
+
+    setDeleteLoading(postId);
+
+    try {
+      const res = await fetch('/api/admin/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, secret })
+      });
+      const result = await res.json();
+      if (result.success) {
+        alert('記事を削除しました。');
+        fetchAll();
+      } else {
+        alert('削除に失敗しました: ' + (result.error || '不明なエラー'));
+      }
+    } catch (e: any) {
+      alert('エラーが発生しました: ' + e.message);
+    } finally {
+      setDeleteLoading(null);
+    }
   }
 
   return (
@@ -52,6 +76,23 @@ export default function AdminPage() {
         <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: 0 }}>情報マーケット 管理者ダッシュボード</h1>
         <p style={{ color: '#666', margin: '5px 0 0' }}>渾身のタイトルを予約し、自動執筆させることができます。</p>
       </header>
+      
+      {/* Security Input Card */}
+      <div style={{ backgroundColor: '#fafafa', borderRadius: '8px', padding: '20px', border: '1px solid #eee', marginBottom: '30px' }}>
+        <label style={{ fontSize: '14px', fontWeight: 'bold', color: '#444', display: 'block', marginBottom: '8px' }}>
+          管理者シークレットキーを入力してください（SUPABASE_SERVICE_ROLE_KEY）：
+        </label>
+        <input 
+          type="password" 
+          placeholder="ey..." 
+          value={secret} 
+          onChange={(e) => setSecret(e.target.value)} 
+          style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '14px' }}
+        />
+        <p style={{ color: '#888', fontSize: '12px', margin: '6px 0 0' }}>
+          ※記事削除の安全な実行のため、お使いの `SUPABASE_SERVICE_ROLE_KEY` をここに入力してください。
+        </p>
+      </div>
       
       {/* タイトル一括登録フォーム */}
       <div style={{ backgroundColor: '#f0f7ff', padding: '25px', borderRadius: '12px', marginBottom: '40px', border: '2px solid #0070f3' }}>
@@ -85,7 +126,9 @@ export default function AdminPage() {
         {posts.map(p => (
           <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #eee', borderRadius: '8px' }}>
             <span style={{ fontSize: '14px' }}>{p.title}</span>
-            <button onClick={() => handleDelete(p.id)} style={{ color: '#e11d48', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', fontWeight: 'bold' }}>削除</button>
+            <button onClick={() => handleDelete(p.id, p.title)} disabled={deleteLoading === p.id} style={{ color: '#e11d48', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', fontWeight: 'bold' }}>
+              {deleteLoading === p.id ? '削除中...' : '削除'}
+            </button>
           </div>
         ))}
       </div>

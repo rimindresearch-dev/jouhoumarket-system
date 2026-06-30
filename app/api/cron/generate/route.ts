@@ -34,7 +34,7 @@ export async function GET(req: Request) {
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
       `Your theme today is: "${targetTitle}". ` +
       'Your article content MUST strictly follow this exact 6-step structure in fluent Japanese (です・ます調):\n\n' +
-      'Step 1) Title & Intro Hook: Start directly with the article body. First 3 lines must state WHO this article is for with concrete numbers or surprising hooks.\n' +
+      'Step 1) Title & Intro Hook: Start directly with the given title. The first 3 lines must be a powerful "Hook" with concrete numbers or surprising facts. State clearly WHO this is for.\n' +
       'Step 2) Problem & Empathy (問題提起・共感): Articulate the target reader\'s real worries. Make them feel "Koji understands me!".\n' +
       'Step 3) Conclusion First (結論を先出し): A clean bulleted list of 3-5 key takeaways of this article.\n' +
       'Step 4) Body: Steps/Experience (本文：ステップ・比較・体験談): Explain the actual step-by-step roadmap of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion) and write detailed, concrete workflows.\n' +
@@ -51,7 +51,7 @@ export async function GET(req: Request) {
       body: JSON.stringify({
         messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: userPrompt }],
         model: 'openai',
-        jsonMode: true
+        json: true // 👈 jsonMode から最新の json パラメータに完全修正
       })
     });
 
@@ -59,7 +59,13 @@ export async function GET(req: Request) {
     const startIndex = rawJsonText.indexOf('{');
     const endIndex = rawJsonText.lastIndexOf('}');
     if (startIndex === -1 || endIndex === -1) throw new Error('AI Response Error');
-    const cleanJson = rawJsonText.substring(startIndex, endIndex + 1);
+    
+    // 余計な ```json 等のマークダウンブロックを綺麗に取り除くクレンジング処理
+    let cleanJson = rawJsonText.substring(startIndex, endIndex + 1).trim();
+    if (cleanJson.startsWith('```')) {
+      const match = cleanJson.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+      if (match) cleanJson = match[1].trim();
+    }
     const blogData = JSON.parse(cleanJson);
 
     // 3. 画像生成とR2アップロード
@@ -90,7 +96,7 @@ export async function GET(req: Request) {
 
     const parsedSummary = (blogData.summary || '').substring(0, 250);
 
-    // 5. Supabaseへ記事データを保存（newPost.idが正しく機能するようにselect追加）
+    // 5. Supabaseへ記事データを保存
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: targetTitle,
       slug: (blogData.slug || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-').substring(0, 150),
