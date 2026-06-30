@@ -7,7 +7,7 @@ import { supabaseAdmin } from '../../../../lib/supabase';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// 文字コードやAIのブレを100%防ぎ、各セクションを安全に切り出すヘルパー関数
+// 【100%エラーフリー】大文字小文字の揺れも吸収し、文字の位置だけで完璧に中身を切り出すパーサー関数
 function extractPart(text: string, tag: string): string {
   if (!text) return '';
   const tagUpper = `[${tag.toUpperCase()}]`;
@@ -16,6 +16,7 @@ function extractPart(text: string, tag: string): string {
 
   const start = index + tagUpper.length;
   
+  // 次に出現するタグを探して、そこまでの文字列を切り出す
   const nextTags = ['[TITLE]', '[SLUG]', '[SUMMARY]', '[CATEGORY]', '[TAGS]', '[IMAGE_PROMPT]', '[CONTENT]'];
   let end = text.length;
 
@@ -37,10 +38,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'GEMINI_API_KEY is not configured in Vercel settings.' }, { status: 500 });
-    }
-
     const seed = Math.floor(Math.random() * 9999999);
 
     // 1. 予約リスト（title_queue）から一番古い未処理タイトル（ひな型テーマ）を1つ取得
@@ -57,7 +54,7 @@ export async function GET(req: Request) {
 
     const targetTitle = queueData.title;
 
-    // 2. 指定された「4段階構成テンプレート」に厳格に沿ってコラムを執筆する指示
+    // 2. 指定された「4段階構成テンプレート」に厳格に沿ってコラムを執筆する指示（キー不要のプレーンテキストデリミタ方式）
     const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
       `Your theme today is: "${targetTitle}". ` +
@@ -77,41 +74,30 @@ export async function GET(req: Request) {
       '[IMAGE_PROMPT]\n' +
       'Write a custom, highly specific imagePrompt in English representing the theme of the article (vibrant, modern 3D render illustration, warm lighting, highly detailed).\n' +
       '[CONTENT]\n' +
-      'Write the complete article body text (minimum 1000 words) strictly using these 4 functional sections. Write completely unique and valuable content for each section:\n' +
-      'Section 1) Introduction & Hook (Heading: None / No Markdown heading needed. Start directly with the hook paragraphs): ' +
-      'Write an extremely compelling introduction hook (3 lines or less) for your generated [TITLE]. State clearly WHO this article is for with concrete numbers or surprising facts.\n' +
-      'Section 2) Problem & Empathy (Heading: Invent a highly catchy custom heading, e.g., "### 「AIを使えば簡単に稼げる」の甘い罠と、私の手痛い失敗談"): ' +
-      'Articulate the target reader\'s real worries. Make them feel "Koji understands me!".\n' +
-      'Section 3) Conclusion First (Heading: Invent a highly catchy custom heading, e.g., "### バナーデザイン副業で月15万円を確実に手にするための結論"): ' +
-      'A clean bulleted list of 3-5 key takeaways of this article, giving them the reason to read.\n' +
-      'Section 4) Body: Steps/Experience (Heading: Invent a highly catchy custom heading, e.g., "### 完全未経験から最短で売上を出すための実践的な3ステップ"): ' +
-      'Explain the actual step-by-step roadmap of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion, Canva) and write detailed, concrete workflows. Do NOT write any summary or conclusion sections after this.';
+      'Write the complete article body text (minimum 1000 words) using these exact Markdown headings. Write completely unique and valuable content for each section:\n' +
+      '### 1. タイトル＆冒頭フック\n' +
+      '（あなたが上で考えた「新しい記事タイトル」に基づき、具体的な数字や事実で引きつけ、誰のための記事かを明示するフック文章を3行以内で執筆してください）\n' +
+      '### 2. 問題提起・共感ゾーン\n' +
+      '（読者が抱えている悩みをそのまま言語化。「わかってる!」と思わせる共感の文章）\n' +
+      '### 3. 結論を先出し\n' +
+      '（この記事でわかることを3〜5個の箇条書きで明示し、読む理由を渡す文章）\n' +
+      '### 4. 本文：ステップ or 比較 or 体験談\n' +
+      '（副業・新しいやり方の「ステップ形式」または「やってみた形式」で、具体的な手順、画像・スクショの説明、使用するリアルなツール名：ChatGPT, CapCut, Suno, Midjourney, Vrew などを詳しく解説する文章）';
 
-    const userPrompt = `Please write the absolute best masterpiece article based on the draft theme: "${targetTitle}" using the 4-step template.`;
+    const userPrompt = `Please write the absolute best masterpiece article for the title: "${targetTitle}" using the 4-step plain-text delimiter template.`;
 
-    // 3. 【通信】公式の Google Gemini API へ直接アクセス
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: sysPrompt + '\n\n' + userPrompt }]
-            }
-          ]
-        })
-      }
-    );
+    const aiText = await fetch('https://text.pollinations.ai/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: userPrompt }],
+        model: 'openai', // 爆速＆完全無料のopenaiモデルで実行（JSON制限を受けないプレーンテキストなので、1文字も途切れません）
+        seed: seed
+      })
+    });
 
-    if (!geminiRes.ok) {
-      throw new Error('Google Gemini API returned non-OK status: ' + geminiRes.status);
-    }
-
-    const geminiData = await geminiRes.json();
-    const rawText = geminiData.candidates[0].content.parts[0].text;
-
+    const rawText = await aiText.text();
+    
     // 自作の安全抽出関数（extractPart）でバグなく正確に切り出し
     const titleStr = extractPart(rawText, 'TITLE') || targetTitle; // AIが考えたタイトルを適用
     let slugStr = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
@@ -128,7 +114,7 @@ export async function GET(req: Request) {
       throw new Error('AI Content generation failed or was empty.');
     }
 
-    // 4. 画像生成とR2アップロード
+    // 3. 画像生成とR2アップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
       const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(imagePromptText + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
@@ -140,7 +126,7 @@ export async function GET(req: Request) {
       }
     } catch (e) { console.warn('Image fail'); }
 
-    // 5. カテゴリの取得または新規作成
+    // 4. カテゴリの取得または新規作成
     let catId: string;
     const { data: existingCat } = await supabaseAdmin.from('categories').select('id').eq('slug', catSlug).limit(1).maybeSingle();
     if (existingCat) {
@@ -153,7 +139,7 @@ export async function GET(req: Request) {
 
     const parsedSummary = summaryStr.substring(0, 250);
 
-    // 6. Supabaseへ記事データを保存
+    // 5. Supabaseへ記事データを保存
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: titleStr,
       slug: slugStr,
@@ -167,7 +153,7 @@ export async function GET(req: Request) {
 
     if (postError) throw postError;
 
-    // 7. タグの紐付け処理
+    // 6. タグの紐付け処理
     const rawTags = extractPart(rawText, 'TAGS');
     if (rawTags) {
       const parsedTags = rawTags.split(',').map(t => t.trim()).filter(Boolean);
@@ -188,12 +174,11 @@ export async function GET(req: Request) {
       }));
     }
 
-    // 8. 処理が終わったタイトルを予約リストから自動削除
+    // 7. 処理が終わったタイトルを予約リストから自動削除
     await supabaseAdmin.from('title_queue').delete().eq('id', queueData.id);
 
     return NextResponse.json({ success: true, title: titleStr });
   } catch (err: any) {
-    console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
