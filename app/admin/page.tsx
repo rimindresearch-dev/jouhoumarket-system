@@ -10,6 +10,7 @@ export default function AdminPage() {
   const [bulkTitles, setBulkTitles] = useState('');
   const [secret, setSecret] = useState('');
   const [loading, setLoading] = useState(false);
+  const [generateLoading, setGenerateLoading] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
 
   useEffect(() => { fetchAll(); }, []);
@@ -40,7 +41,30 @@ export default function AdminPage() {
     setLoading(false);
   }
 
-  // RLS制限を回避するため、安全なバックエンドAPI経由で記事を削除
+  // その場で「今すぐ執筆（APIキック）」を実行する新機能！
+  async function handleGenerate(titleId: string) {
+    if (!secret) {
+      alert('エラー：シークレットキーを入力してください。');
+      return;
+    }
+    setGenerateLoading(titleId);
+    try {
+      const res = await fetch(`/api/cron/generate?secret=${secret}`, { method: 'GET' });
+      const result = await res.json();
+      if (result.success) {
+        alert(`記事「${result.title}」の自動執筆が正常に完了しました！`);
+        fetchAll();
+      } else {
+        alert('執筆に失敗しました: ' + (result.error || '不明なエラー'));
+      }
+    } catch (e: any) {
+      alert('エラー: ' + e.message);
+    } finally {
+      setGenerateLoading(null);
+    }
+  }
+
+  // セキュリティ（RLS）制限を回避し、安全な削除API経由で記事を本番から完全に削除
   async function handleDelete(postId: string, title: string) {
     if (!secret) {
       alert('エラー：管理者シークレットキー（SUPABASE_SERVICE_ROLE_KEY）を上の入力欄に入力してください。');
@@ -74,7 +98,7 @@ export default function AdminPage() {
     <div style={{ maxWidth: '900px', margin: '40px auto', padding: '0 20px', fontFamily: 'sans-serif', color: '#333' }}>
       <header style={{ borderBottom: '2px solid #eee', paddingBottom: '20px', marginBottom: '30px' }}>
         <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: 0 }}>情報マーケット 管理者ダッシュボード</h1>
-        <p style={{ color: '#666', margin: '5px 0 0' }}>渾身のタイトルを予約し、自動執筆させることができます。</p>
+        <p style={{ color: '#666', margin: '5px 0 0' }}>タイトルをインプットし、その場で「今すぐ執筆」させることができます。</p>
       </header>
       
       {/* Security Input Card */}
@@ -90,7 +114,7 @@ export default function AdminPage() {
           style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '14px' }}
         />
         <p style={{ color: '#888', fontSize: '12px', margin: '6px 0 0' }}>
-          ※記事削除の安全な実行のため、お使いの `SUPABASE_SERVICE_ROLE_KEY` をここに入力してください。
+          ※「今すぐ執筆」や「削除」を行うために、ご自身の `sb_secret_...` のキーを入力してください。
         </p>
       </div>
       
@@ -108,16 +132,22 @@ export default function AdminPage() {
         </button>
       </div>
 
-      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '30px' }}>
-        <div style={{ flex: '1 1 300px', padding: '15px', border: '1px solid #eee', borderRadius: '8px', backgroundColor: '#fafafa' }}>
-          <h3 style={{ margin: '0 0 10px', fontSize: '16px', fontWeight: 'bold' }}>待機中のタイトル予約リスト ({queue.length}件)</h3>
-          <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {queue.map((q, idx) => (
-              <div key={q.id} style={{ fontSize: '13px', color: '#555', padding: '6px', borderBottom: '1px solid #eee' }}>
-                {idx + 1}. {q.title}
+      {/* 待機中の予約リスト */}
+      <div style={{ marginBottom: '40px', padding: '20px', border: '1px solid #eee', borderRadius: '12px', backgroundColor: '#fafafa' }}>
+        <h3 style={{ margin: '0 0 15px', fontSize: '18px', fontWeight: 'bold', borderBottom: '2px solid #eaeaea', paddingBottom: '8px' }}>⏳ 待機中のタイトル予約リスト ({queue.length}件)</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {queue.length === 0 ? (
+            <p style={{ color: '#999', margin: 0, fontSize: '14px' }}>待機中の予約タイトルはありません。上記のフォームからインプットしてください。</p>
+          ) : (
+            queue.map((q, idx) => (
+              <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', backgroundColor: '#fff', borderRadius: '6px', border: '1px solid #eaeaea' }}>
+                <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{idx + 1}. {q.title}</span>
+                <span style={{ fontSize: '11px', color: '#0070f3', fontWeight: 'bold', backgroundColor: '#e0f2fe', padding: '4px 10px', borderRadius: '20px' }}>
+                  {idx === 0 ? '◀ 次に自動執筆されるお題' : '待機中'}
+                </span>
               </div>
-            ))}
-          </div>
+            ))
+          )}
         </div>
       </div>
 

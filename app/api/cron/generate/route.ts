@@ -29,21 +29,39 @@ export async function GET(req: Request) {
     const targetTitle = queueData.title;
     const seed = Math.floor(Math.random() * 9999999);
 
-    // 2. 指定された「6段階構成テンプレート」に従ってコウジが執筆するよう指示
-    const sysPrompt = 'Write a SEO blog JSON matching: {"title":"string","slug":"string","summary":"string","content":"markdown content string (minimum 1000 words)","category":"string","tags":["string"],"imagePrompt":"string"}. ' +
+    // 2. 超具体的・事実ベースの記事執筆指示（JSONエラーを永久追放するデリミタ方式）
+    const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
       `Your theme today is: "${targetTitle}". ` +
       'Your article content MUST strictly follow this exact 6-step structure in fluent Japanese (です・ます調):\n\n' +
-      'Step 1) Title & Intro Hook: Start directly with the given title. The first 3 lines must be a powerful "Hook" with concrete numbers or surprising facts. State clearly WHO this is for.\n' +
-      'Step 2) Problem & Empathy (問題提起・共感): Articulate the target reader\'s real worries. Make them feel "Koji understands me!".\n' +
-      'Step 3) Conclusion First (結論を先出し): A clean bulleted list of 3-5 key takeaways of this article.\n' +
-      'Step 4) Body: Steps/Experience (本文：ステップ・比較・体験談): Explain the actual step-by-step roadmap of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion) and write detailed, concrete workflows.\n' +
-      'Step 5) Caution & Pitfalls (注意点・失敗パターン): Write about why people fail and how to avoid it. Build massive trust.\n' +
-      'Step 6) Summary & Action: 3-point summary and a clear first action step for the reader.\n\n' +
-      'STRICT SLUG RULE: Small lowercase English letters and hyphens only (e.g., "how-to-earn-50k", "fail-story-ai-hustle").\n' +
-      'STRICT IMAGE PROMPT RULE: Custom English prompt representing the article theme (vibrant, 3D render). Seed: ' + seed;
+      '[TITLE]\n' +
+      `Generate the title. It must be exactly: "${targetTitle}"\n` +
+      '[SLUG]\n' +
+      'Generate a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens.\n' +
+      '[SUMMARY]\n' +
+      'Write a catchy 80-character summary.\n' +
+      '[CATEGORY]\n' +
+      'Choose a natural category (e.g. 在宅ワーク, ネットビジネス, 物販, デザイン副業).\n' +
+      '[TAGS]\n' +
+      'Write 3 to 5 tags, comma separated.\n' +
+      '[IMAGE_PROMPT]\n' +
+      'Write a custom, highly specific imagePrompt in English representing the theme of the article (vibrant, modern 3D render illustration, warm lighting, highly detailed).\n' +
+      '[CONTENT]\n' +
+      'Write the complete article body text (minimum 1000 words) using these exact Markdown headings. Write completely unique and valuable content for each section:\n' +
+      '### 1. タイトル＆冒頭フック\n' +
+      '（具体的な数字や事実で引きつけ、誰のための記事かを明示）\n' +
+      '### 2. 問題提起・共感ゾーン\n' +
+      '（読者の悩みを代弁し、共感を呼び覚ます文章）\n' +
+      '### 3. 結論を先出し\n' +
+      '（この記事でわかることを3〜5個の箇条書きで明示）\n' +
+      '### 4. 本文：ステップ・体験談\n' +
+      '（具体的な手順、ロードマップ、および使用するリアルなツール名：ChatGPT, CapCut, Suno, Midjourney, Vrew などを詳しく解説）\n' +
+      '### 5. 注意点・失敗パターン\n' +
+      '（よくある失敗理由と対策を書いて信頼度アップ）\n' +
+      '### 6. まとめ＆次のアクション\n' +
+      '（要点の整理と一歩目を促すまとめ）';
 
-    const userPrompt = `Please write the absolute best masterpiece article for the title: "${targetTitle}" using the 6-step template.`;
+    const userPrompt = `Please write the absolute best masterpiece article for the title: "${targetTitle}" using the 6-step plain-text delimiter template.`;
 
     const aiText = await fetch('https://text.pollinations.ai/', {
       method: 'POST',
@@ -51,27 +69,39 @@ export async function GET(req: Request) {
       body: JSON.stringify({
         messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: userPrompt }],
         model: 'openai',
-        json: true // 👈 jsonMode から最新の json パラメータに完全修正
+        seed: seed
       })
     });
 
-    const rawJsonText = await aiText.text();
-    const startIndex = rawJsonText.indexOf('{');
-    const endIndex = rawJsonText.lastIndexOf('}');
-    if (startIndex === -1 || endIndex === -1) throw new Error('AI Response Error');
+    const rawText = await aiText.text();
     
-    // 余計な ```json 等のマークダウンブロックを綺麗に取り除くクレンジング処理
-    let cleanJson = rawJsonText.substring(startIndex, endIndex + 1).trim();
-    if (cleanJson.startsWith('```')) {
-      const match = cleanJson.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-      if (match) cleanJson = match[1].trim();
+    // 正規表現を使って各項目を安全に切り分ける（JSONパースエラーが100%起きません）
+    const titleMatch = rawText.match(/\[TITLE\]\s*([\s\S]*?)\s*\[SLUG\]/i);
+    const slugMatch = rawText.match(/\[SLUG\]\s*([\s\S]*?)\s*\[SUMMARY\]/i);
+    const summaryMatch = rawText.match(/\[SUMMARY\]\s*([\s\S]*?)\s*\[CATEGORY\]/i);
+    const categoryMatch = rawText.match(/\[CATEGORY\]\s*([\s\S]*?)\s*\[TAGS\]/i);
+    const tagsMatch = rawText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[IMAGE_PROMPT\]/i);
+    const imagePromptMatch = rawText.match(/\[IMAGE_PROMPT\]\s*([\s\S]*?)\s*\[CONTENT\]/i);
+    const contentMatch = rawText.match(/\[CONTENT\]\s*([\s\S]*)/i);
+
+    if (!titleMatch || !contentMatch) {
+      throw new Error('AI Response formatting failed');
     }
-    const blogData = JSON.parse(cleanJson);
+
+    const titleStr = titleMatch[1].trim() || targetTitle;
+    let slugStr = (slugMatch ? slugMatch[1].trim() : 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+    slugStr = slugStr.substring(0, 150) || 'article-' + seed;
+
+    const summaryStr = (summaryMatch ? summaryMatch[1].trim() : '').substring(0, 240);
+    const categoryName = (categoryMatch ? categoryMatch[1].trim() : '副業ノウハウ').substring(0, 45);
+    const catSlug = encodeURIComponent(categoryName.toLowerCase()).substring(0, 200);
+
+    const imagePromptText = imagePromptMatch ? imagePromptMatch[1].trim() : `A stunning 3D render illustration representing the workspace theme of ${targetTitle}`;
 
     // 3. 画像生成とR2アップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
-      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(blogData.imagePrompt + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
+      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(imagePromptText + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
       const imgRes = await fetch(imgUrl);
       if (imgRes.ok) {
         const filename = `covers/${seed}.webp`;
@@ -80,11 +110,8 @@ export async function GET(req: Request) {
       }
     } catch (e) { console.warn('Image fail'); }
 
-    // 4. カテゴリの取得または新規作成（255制限対応）
+    // 4. カテゴリの取得または新規作成
     let catId: string;
-    const categoryName = (blogData.category || '副業ノウハウ').substring(0, 50);
-    const catSlug = encodeURIComponent(categoryName.toLowerCase()).substring(0, 200);
-
     const { data: existingCat } = await supabaseAdmin.from('categories').select('id').eq('slug', catSlug).limit(1).maybeSingle();
     if (existingCat) {
       catId = existingCat.id;
@@ -94,14 +121,12 @@ export async function GET(req: Request) {
       catId = newCategory.id;
     }
 
-    const parsedSummary = (blogData.summary || '').substring(0, 250);
-
     // 5. Supabaseへ記事データを保存
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
-      title: targetTitle,
-      slug: (blogData.slug || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-').substring(0, 150),
-      summary: parsedSummary || (targetTitle + 'のロードマップを分かりやすく解説します。').substring(0, 250),
-      content: blogData.content,
+      title: titleStr,
+      slug: slugStr,
+      summary: summaryStr || (targetTitle + 'のロードマップを分かりやすく解説します。').substring(0, 240),
+      content: contentMatch[1].trim(),
       cover_image_url: coverUrl,
       category_id: catId,
       status: 'published',
@@ -111,8 +136,9 @@ export async function GET(req: Request) {
     if (postError) throw postError;
 
     // 6. タグの紐付け処理
-    if (Array.isArray(blogData.tags)) {
-      await Promise.all(blogData.tags.map(async (t: string) => {
+    if (tagsMatch && tagsMatch[1]) {
+      const parsedTags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean);
+      await Promise.all(parsedTags.map(async (t: string) => {
         if (!t) return;
         const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
         let tId: string;
