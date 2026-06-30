@@ -7,6 +7,18 @@ import { supabaseAdmin } from '../../../../lib/supabase';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+// AIが最先端の副業を発明するための「大カテゴリ（シード）」
+const AI_SEED_CATEGORIES = [
+  'AI動画クリエイター（TikTok, YouTube Shorts, HeyGen, CapCut）',
+  'AI画像・グラフィックデザイン（Midjourney, Canva, バナーデザイン, ロゴ制作）',
+  'AIテキストライティング（SEOブログ, クラウドソーシング, 電子書籍, 校正）',
+  'AI音声・音楽配信（音声データ入力, ボイスオーバー, Suno, ポッドキャスト）',
+  'AI翻訳・ローカライズ（多言語サイト制作, 字幕代行, 翻訳ライティング）',
+  'AIプログラミング・ノーコード（LP制作, WEBツール開発, Shopify構築）',
+  'Notion・業務効率化テンプレート（Notion販売, デジタルプランナー, Zapier自動化）',
+  'AIデジタル電子書籍出版（Kindle絵本, 教材作成, ChatGPTノウハウ本）'
+];
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -121,13 +133,11 @@ export async function GET(req: Request) {
       catId = newCategory.id;
     }
 
-    const parsedSummary = (blogData.summary || '').substring(0, 250);
-
-    // 5. Supabaseへ記事データを保存
+    // 6. Supabaseへ記事データを保存（不要なparsedSummaryの定義を削除してエラーを完全解消！）
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: titleStr,
       slug: slugStr,
-      summary: parsedSummary || (targetTitle + 'のロードマップを分かりやすく解説します。').substring(0, 250),
+      summary: summaryStr || (targetTitle + 'のロードマップを分かりやすく解説します。').substring(0, 240),
       content: contentMatch[1].trim(),
       cover_image_url: coverUrl,
       category_id: catId,
@@ -137,7 +147,7 @@ export async function GET(req: Request) {
 
     if (postError) throw postError;
 
-    // 6. タグの紐付け処理
+    // 7. タグの紐付け処理
     if (tagsMatch && tagsMatch[1]) {
       const parsedTags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean);
       await Promise.all(parsedTags.map(async (t: string) => {
@@ -157,7 +167,7 @@ export async function GET(req: Request) {
       }));
     }
 
-    // 7. 処理が終わったタイトルを予約リストから自動削除
+    // 8. 処理が終わったタイトルを予約リストから自動削除
     await supabaseAdmin.from('title_queue').delete().eq('id', queueData.id);
 
     return NextResponse.json({ success: true, title: targetTitle });
