@@ -85,22 +85,53 @@ export async function GET(req: Request) {
 
     const userPrompt = `Please write the absolute best masterpiece article for the title: "${targetTitle}" using the 4-step plain-text delimiter template.`;
 
-    const aiText = await fetch('https://text.pollinations.ai/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: userPrompt }],
-        model: 'openai',
-        seed: seed
-      })
-    });
+    // 3. 【通信】公式の Google Gemini API へ直接アクセス
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: sysPrompt + '\n\n' + userPrompt }]
+            }
+          ]
+        })
+      }
+    );
 
-    const rawText = await aiText.text();
-    
+    if (!geminiRes.ok) {
+      throw new Error('Google Gemini API returned non-OK status: ' + geminiRes.status);
+    }
+
+    const geminiData = await geminiRes.json();
+    const rawText = geminiData.candidates[0].content.parts[0].text;
+
     // 自作の安全抽出関数（extractPart）でバグなく正確に切り出し
     const titleStr = extractPart(rawText, 'TITLE') || targetTitle; // AIが考えたタイトルを適用
     let slugStr = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
     slugStr = slugStr.substring(0, 150) || 'article-' + seed;
+
+    // 100%重複を防ぐ：一意のURLスラッグが見つかるまで、自動で末尾を変えてループ検証する安全機構
+    let isUnique = false;
+    let attempts = 0;
+
+    while (!isUnique && attempts < 10) {
+      const { data: existingPost } = await supabaseAdmin
+        .from('posts')
+        .select('id')
+        .eq('slug', slugStr)
+        .limit(1)
+        .maybeSingle();
+
+      if (!existingPost) {
+        isUnique = true;
+      } else {
+        slugStr = `${slugStr.substring(0, 130)}-${Math.floor(Math.random() * 100000)}`;
+        attempts++;
+      }
+    }
 
     const summaryStr = extractPart(rawText, 'SUMMARY').substring(0, 240);
     const categoryName = (extractPart(rawText, 'CATEGORY') || '副業ノウハウ').substring(0, 45);
@@ -113,7 +144,7 @@ export async function GET(req: Request) {
       throw new Error('AI Content generation failed or was empty.');
     }
 
-    // 3. 画像生成とR2アップロード
+    // 4. 画像生成とR2アップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
       const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(imagePromptText + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
@@ -125,7 +156,7 @@ export async function GET(req: Request) {
       }
     } catch (e) { console.warn('Image fail'); }
 
-    // 4. カテゴリの取得または新規作成
+    // 5. カテゴリの取得または新規作成
     let catId: string;
     const { data: existingCat } = await supabaseAdmin.from('categories').select('id').eq('slug', catSlug).limit(1).maybeSingle();
     if (existingCat) {
@@ -138,7 +169,7 @@ export async function GET(req: Request) {
 
     const parsedSummary = summaryStr.substring(0, 250);
 
-    // 5. Supabaseへ記事データを保存
+    // 6. Supabaseへ記事データを保存
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: titleStr,
       slug: slugStr,
@@ -152,13 +183,13 @@ export async function GET(req: Request) {
 
     if (postError) throw postError;
 
-    // 6. タグの紐付け処理
+    // 7. タグの紐付け処理
     const rawTags = extractPart(rawText, 'TAGS');
     if (rawTags) {
       const parsedTags = rawTags.split(',').map(t => t.trim()).filter(Boolean);
       await Promise.all(parsedTags.map(async (t: string) => {
         if (!t) return;
-        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, ''))).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
+        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
         let tId: string;
         const { data: extTag } = await supabaseAdmin.from('tags').select('id').eq('slug', tSlug).limit(1).maybeSingle();
         if (extTag) {
@@ -173,11 +204,12 @@ export async function GET(req: Request) {
       }));
     }
 
-    // 7. 処理が終わったタイトルを予約リストから自動削除
+    // 8. 処理が終わったタイトルを予約リストから自動削除
     await supabaseAdmin.from('title_queue').delete().eq('id', queueData.id);
 
     return NextResponse.json({ success: true, title: titleStr });
   } catch (err: any) {
+    console.error(err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
