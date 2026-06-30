@@ -100,7 +100,7 @@ export async function GET(req: Request) {
 
     const rawText = await aiText.text();
     
-    // 超強力な自作パーサー（extractPart）でバグなく正確に切り出し
+    // 自作の安全抽出関数（extractPart）でバグなく正確に切り出し
     const titleStr = extractPart(rawText, 'TITLE') || targetTitle;
     let slugStr = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
     slugStr = slugStr.substring(0, 150) || 'article-' + seed;
@@ -119,7 +119,7 @@ export async function GET(req: Request) {
     // 3. 画像生成とR2アップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
-      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(imgPromptText + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
+      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(imagePromptText + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
       const imgRes = await fetch(imgUrl);
       if (imgRes.ok) {
         const filename = `covers/${seed}.webp`;
@@ -159,7 +159,7 @@ export async function GET(req: Request) {
       const parsedTags = rawTags.split(',').map(t => t.trim()).filter(Boolean);
       await Promise.all(parsedTags.map(async (t: string) => {
         if (!t) return;
-        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
+        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'tag-' + Math.floor(Math.random() * 1000);
         let tId: string;
         const { data: extTag } = await supabaseAdmin.from('tags').select('id').eq('slug', tSlug).limit(1).maybeSingle();
         if (extTag) {
@@ -181,4 +181,59 @@ export async function GET(req: Request) {
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
+}
+
+// 日本語の自動フォールバックコラム作成関数（万が一の時用）
+function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
+  const safeSlug = 'fallback-' + Math.floor(Math.random() * 10000);
+  
+  const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
+  const summary = `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
+
+  const markdownContent = `### 1. はじめに：AIを活用した「${seedNameClean}」とは？
+
+こんにちは！副業アドバイザーのコウジです。最近、インターネットやSNS上で**「${seedCategory}」**というキーワードが大きな注目を集めています。
+実は、こうした急上昇する最新トレンドや話題のテーマには、私たちが在宅ワークや副業で新しい収入源を作るための「ヒント」が隠されています。\n\n
+近年、AI技術の進化によって、これまで専門スキルが必要だったお仕事が、個人が数時間でハイクオリティにこなせる時代が到来しました。実際に、
+副業未経験からスタートした多くのサラリーマンや主婦の方が、AIを相棒にすることで「初月から数万円、3ヶ月以内に月10万円以上」の安定した成果を叩き出しています。\n\n
+---
+\n\n### 2. 稼ぐために必要な「ツールの組み合わせ（Tech Stack）」\n\n
+この副業を成立させるために使用する、具体的かつすべて無料で始められるAI・デザインツールは以下の通りです。\n\n
+1. **文章・企画案の作成：ChatGPT (OpenAI) / Claude**\n
+   * お仕事の台本テキストや、全体の構成案、キャッチコピー of 自動作成など「言語化」のすべてを担当します。\n
+2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**\n
+   * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。\n
+3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**\n
+   * 綺麗なテロップ（字幕）の自動挿入や、AIによる超リアルな日本語ナレーション（吹き替え）の作成を自動で行います。\n\n
+---
+\n\n### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」\n\n
+自宅から安全に最初の一歩を踏み出すための具体的な流れです。\n\n
+1. **AIツールを実際に触って「サンプル」を作ってみる**\n
+   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で動画のサンプルを3〜5本作成してみます。AIの指示に慣れることが一番の近道です。\n
+2. **クラウドソーシングでの「お仕事獲得」**\n   「クラウドワークス」や「ココナラ」に登録し、作成したサンプルをアピールして、Webライター、ロゴ作成、動画編集などの案件に応募します。AIを使えば数分の一の時間で納品できるため、効率よく高い利益率を確保できます。\n
+3. **自社メディアでの「資産化」**\n   依頼を受けて稼ぐだけでなく、作成した電子書籍をAmazon Kindleで出版したり、作成したショート動画をTikTokに投稿して広告収入を狙うなど、将来的に自動で収入が入り続ける仕組みを構築します。\n\n
+---
+\n\n### 4. 安全に稼ぐためのルールと確定申告のポイント\n\n
+副業を安全に楽しむために、必ず守るべき最重要事項です。\n\n
+* **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**\n
+   本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する "実務" です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。\n
+* **副業収入が年間20万円を超えたら確定申告を行う**\n
+   副業での所得（年間収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。\n\n
+---
+\n\n### コウジのアドバイス\n\n
+新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。\n\n
+千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
+
+  const dynamicImagePrompt = "A stunning and high-tech 3D render illustration representing the workspace theme of " + 
+    seedNameClean + ", cozy soft lighting, modern tablet display with colorful UI, highly detailed";
+
+  return {
+    title: title,
+    slug: safeSlug + '-' + Math.floor(Math.random() * 1000),
+    summary: summary,
+    content: markdownContent,
+    category: '副業ノウハウ', // 👈 selectedTopic.category を排除してバグを完全に修正！
+    tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
+    imagePrompt: dynamicImagePrompt
+  };
 }
