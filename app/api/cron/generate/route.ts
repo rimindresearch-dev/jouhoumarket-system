@@ -79,7 +79,7 @@ export async function GET(req: Request) {
       '[CONTENT]\n' +
       'Write the complete article body text (minimum 1000 words) strictly using these 4 functional sections. Write completely unique and valuable content for each section:\n' +
       'Section 1) Introduction & Hook (Heading: None / No Markdown heading needed. Start directly with the hook paragraphs): ' +
-      'Write an extremely compelling introduction hook (3 lines or less) for your generated [TITLE]. State clearly WHO this is for with concrete numbers or surprising facts.\n' +
+      'Write an extremely compelling introduction hook (3 lines or less) for your generated [TITLE]. State clearly WHO this article is for with concrete numbers or surprising facts.\n' +
       'Section 2) Problem & Empathy (Heading: Invent a highly catchy custom heading, e.g., "### 「AIを使えば簡単に稼げる」の甘い罠と、私の手痛い失敗談"): ' +
       'Articulate the target reader\'s real worries. Make them feel "Koji understands me!".\n' +
       'Section 3) Conclusion First (Heading: Invent a highly catchy custom heading, e.g., "### バナーデザイン副業で月15万円を確実に手にするための結論"): ' +
@@ -198,7 +198,7 @@ export async function GET(req: Request) {
   }
 }
 
-// 緊急用日本語フォールバック
+// 日本語の自動フォールバックコラム作成関数（万が一の時用）
 function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
   const safeSlug = 'fallback-' + Math.floor(Math.random() * 10000);
   return {
@@ -210,7 +210,3 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
     imagePrompt: `A stunning and high-tech 3D render illustration representing the workspace theme of ${seedNameClean}`
   };
 }
-'@
-
-# 3. ファイルを上書き保存します
-$RouteCode | Out-File -LiteralPath "app/api/cron/generate/route.ts" -Encoding utf8
