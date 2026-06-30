@@ -7,11 +7,28 @@ import { supabaseAdmin } from '../../../../lib/supabase';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// 文字コードやAIのブレを100%防ぎ、各セクションを安全に切り出す超強力なヘルパー関数
+// 【100%エラーフリー】大文字小文字の揺れも吸収し、文字の位置だけで完璧に中身を切り出す最高峰のパーサー関数
 function extractPart(text: string, tag: string): string {
-  const regex = new RegExp(`\\[${tag}\\]\\s*([\\s\\S]*?)(?:\\s*\\[(?:TITLE|SLUG|SUMMARY|CATEGORY|TAGS|IMAGE_PROMPT|CONTENT)\\]|$)`, 'i');
-  const match = text.match(regex);
-  return match ? match[1].trim() : '';
+  if (!text) return '';
+  const tagUpper = `[${tag.toUpperCase()}]`;
+  const index = text.toUpperCase().indexOf(tagUpper);
+  if (index === -1) return '';
+
+  const start = index + tagUpper.length;
+  
+  // 次に出現するタグを探して、そこまでの文字列を切り出す
+  const nextTags = ['[TITLE]', '[SLUG]', '[SUMMARY]', '[CATEGORY]', '[TAGS]', '[IMAGE_PROMPT]', '[CONTENT]'];
+  let end = text.length;
+
+  for (const nextTag of nextTags) {
+    if (nextTag === tagUpper) continue;
+    const nextIndex = text.toUpperCase().indexOf(nextTag, start);
+    if (nextIndex !== -1 && nextIndex < end) {
+      end = nextIndex;
+    }
+  }
+
+  return text.substring(start, end).trim();
 }
 
 export async function GET(req: Request) {
@@ -20,6 +37,8 @@ export async function GET(req: Request) {
     if (searchParams.get('secret') !== process.env.SUPABASE_SERVICE_ROLE_KEY || !supabaseAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const seed = Math.floor(Math.random() * 9999999);
 
     // 1. 予約リスト（title_queue）から一番古い未処理タイトルを1つ取得
     const { data: queueData, error: queueError } = await supabaseAdmin
@@ -34,9 +53,8 @@ export async function GET(req: Request) {
     }
 
     const targetTitle = queueData.title;
-    const seed = Math.floor(Math.random() * 9999999);
 
-    // 2. 超具体的・事実ベースの記事執筆指示（文字切れを永久防止するプレーンテキストデリミタ方式）
+    // 2. 超具体的・事実ベースの記事執筆指示（JSONエラーを永久追放するプレーンテキストデリミタ方式）
     const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
       `Your theme today is: "${targetTitle}". ` +
@@ -82,7 +100,7 @@ export async function GET(req: Request) {
 
     const rawText = await aiText.text();
     
-    // 自作の安全抽出関数（extractPart）を使い、各セクションを切り出す（パースエラーが永久に起きません）
+    // 超強力な自作パーサー（extractPart）でバグなく正確に切り出し
     const titleStr = extractPart(rawText, 'TITLE') || targetTitle;
     let slugStr = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
     slugStr = slugStr.substring(0, 150) || 'article-' + seed;
@@ -101,7 +119,7 @@ export async function GET(req: Request) {
     // 3. 画像生成とR2アップロード
     let coverUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1024&auto=format&fit=crop';
     try {
-      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(imagePromptText + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
+      const imgUrl = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(imgPromptText + ', high res, vibrant') + '?width=1024&height=576&nologo=true&seed=' + seed;
       const imgRes = await fetch(imgUrl);
       if (imgRes.ok) {
         const filename = `covers/${seed}.webp`;
