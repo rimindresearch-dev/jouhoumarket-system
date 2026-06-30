@@ -51,14 +51,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, message: '予約リストが空のため、執筆を待機しました。' });
     }
 
-    const targetTitle = queueData.title; // 👈 これがひな型テーマ（例：バナー作成代行）になります
+    const targetTitle = queueData.title; // ひな型テーマ（例：バナー作成代行）
 
-    // 2. 4段階構成テンプレートのプロンプト（AI自身にタイトルとフックを自律的に考えさせます）
+    // 2. 4段階構成テンプレートのプロンプト（タイトル、見出し、本文をすべてAIに自律的に考えさせます）
     const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
-      'Your article content MUST strictly follow this exact 4-step structure in fluent Japanese (です・ます調):\n\n' +
+      `Your raw draft theme today is: "${targetTitle}". ` +
+      'Your article content MUST strictly follow this exact 4-step structure in fluent Japanese (です・ます調) with custom attractive headings. ' +
+      'Do NOT output literal boilerplate strings like "1. タイトル＆冒頭フック" or "2. 問題提起・共感ゾーン" as the Markdown headings. ' +
+      'Instead, you MUST dynamically invent highly specific, catchy, and natural subheadings (using ### ) matching the content of each section.\n\n' +
       '[TITLE]\n' +
-      `Generate an extremely catchy, high-converting Japanese article title (like "スマホ1台でできる！ChatGPTを活用してバナー作成代行で毎月3万円を得る方法") based on the raw draft theme: "${targetTitle}". Do NOT use "${targetTitle}" literally; expand it into a masterpiece title.\n` +
+      `Generate an extremely catchy, high-converting Japanese article title (including concrete numbers, earning data, or a shocking/surprising hook, e.g., "スマホ1台で完結！AIイラスト生成とLINEスタンプ販売で手堅く月3万円を稼ぐ極意") based on the raw draft theme: "${targetTitle}".\n` +
       '[SLUG]\n' +
       'Generate a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens.\n' +
       '[SUMMARY]\n' +
@@ -70,17 +73,17 @@ export async function GET(req: Request) {
       '[IMAGE_PROMPT]\n' +
       'Write a custom, highly specific imagePrompt in English representing the theme of the article (vibrant, modern 3D render illustration, warm lighting, highly detailed).\n' +
       '[CONTENT]\n' +
-      'Write the complete article body text (minimum 1000 words) using these exact Markdown headings. Write completely unique and valuable content for each section:\n' +
-      '### 1. タイトル＆冒頭フック\n' +
-      '（あなたが上で考えた「新しい記事タイトル」に基づき、具体的な数字や事実で引きつけ、誰のための記事かを明示するフック文章を3行以内で執筆してください）\n' +
-      '### 2. 問題提起・共感ゾーン\n' +
-      '（読者が抱えている悩みをそのまま言語化。「わかってる!」と思わせる共感の文章）\n' +
-      '### 3. 結論を先出し\n' +
-      '（この記事でわかることを3〜5個の箇条書きで明示し、読む理由を渡す文章）\n' +
-      '### 4. 本文：ステップ or 比較 or 体験談\n' +
-      '（副業・新しいやり方の「ステップ形式」または「やってみた形式」で、具体的な手順、画像・スクショの説明、使用するリアルなツール名：ChatGPT, CapCut, Suno, Midjourney, Vrew などを詳しく解説する文章）';
+      'Write the complete article body text (minimum 1000 words) strictly using these 4 functional sections. Write completely unique and valuable content for each section:\n' +
+      'Section 1) Introduction & Hook (Heading: None / No Markdown heading needed. Start directly with the hook paragraphs): ' +
+      'Write an extremely compelling introduction hook (3 lines or less) for your generated [TITLE]. State clearly WHO this is for with concrete numbers or surprising facts.\n' +
+      'Section 2) Problem & Empathy (Heading: Invent a highly catchy custom heading, e.g., "### 「AIを使えば簡単に稼げる」の甘い罠と、私の手痛い失敗談"): ' +
+      'Articulate the target reader\'s real worries. Make them feel "Koji understands me!".\n' +
+      'Section 3) Conclusion First (Heading: Invent a highly catchy custom heading, e.g., "### バナーデザイン副業で月15万円を確実に手にするための結論"): ' +
+      'A clean bulleted list of 3-5 key takeaways of this article, giving them the reason to read.\n' +
+      'Section 4) Body: Steps/Experience (Heading: Invent a highly catchy custom heading, e.g., "### 完全未経験から最短で売上を出すための実践的な3ステップ"): ' +
+      'Explain the actual step-by-step roadmap of the side hustle. You MUST name real AI tools (e.g. ChatGPT, Midjourney, CapCut, Suno, Notion, Canva) and write detailed, concrete workflows. Do NOT write any summary or conclusion sections after this.';
 
-    const userPrompt = `Please brainstorm a great article title and write the complete masterpiece article based on the draft theme: "${targetTitle}" using the 4-step template.`;
+    const userPrompt = `Please brainstorm an amazing title and write the complete masterpiece article based on the draft theme: "${targetTitle}" using the 4-step template.`;
 
     const aiText = await fetch('https://text.pollinations.ai/', {
       method: 'POST',
@@ -88,14 +91,15 @@ export async function GET(req: Request) {
       body: JSON.stringify({
         messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: userPrompt }],
         model: 'openai',
-        seed: seed
+        seed: seed,
+        max_tokens: 3000 // 最大文字数を解放
       })
     });
 
     const rawText = await aiText.text();
     
     // 自作の安全抽出関数（extractPart）でバグなく正確に切り出し
-    const titleStr = extractPart(rawText, 'TITLE') || targetTitle; // AIが考えたタイトルを適用（なければひな型をフォールバック）
+    const titleStr = extractPart(rawText, 'TITLE') || targetTitle; // AIが考えたタイトルを適用
     let slugStr = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
     slugStr = slugStr.substring(0, 150) || 'article-' + seed;
 
@@ -133,11 +137,13 @@ export async function GET(req: Request) {
       catId = newCategory.id;
     }
 
+    const parsedSummary = summaryStr.substring(0, 250);
+
     // 5. Supabaseへ記事データを保存（AIが考えた綺麗なタイトル titleStr で保存します）
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: titleStr,
       slug: slugStr,
-      summary: summaryStr || (titleStr + 'のロードマップを分かりやすく解説します。').substring(0, 240),
+      summary: parsedSummary || (titleStr + 'のロードマップを分かりやすく解説します。').substring(0, 240),
       content: contentStr,
       cover_image_url: coverUrl,
       category_id: catId,
@@ -175,59 +181,4 @@ export async function GET(req: Request) {
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
-}
-
-// 日本語の自動フォールバックコラム作成関数（万が一の時用）
-function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
-  const safeSlug = 'fallback-' + Math.floor(Math.random() * 10000);
-  
-  const title = `【AI副業】未経験から月10万稼ぐ！「${seedNameClean}」の実践手順と成功事例`;
-  const summary = `最新のAI技術である「${seedCategory}」を活用し、初心者でも安全に自宅で収入を得るための具体的な手順と、実際に結果を出した事例を詳しく解説します。`;
-
-  const markdownContent = `### 1. はじめに：AIを活用した「${seedNameClean}」とは？
-
-こんにちは！副業アドバイザーのコウジです。最近、インターネットやSNS上で**「${seedCategory}」**というキーワードが大きな注目を集めています。
-実は、こうした急上昇する最新トレンドや話題のテーマには、私たちが在宅ワークや副業で新しい収入源を作るための「ヒント」が隠されています。\n\n
-近年、AI技術の進化によって、これまで専門スキルが必要だったお仕事が、個人が数時間でハイクオリティにこなせる時代が到来しました。実際に、
-副業未経験からスタートした多くのサラリーマンや主婦の方が、AIを相棒にすることで「初月から数万円、3ヶ月以内に月10万円以上」の安定した成果を叩き出しています。\n\n
----
-\n\n### 2. 稼ぐために必要な「ツールの組み合わせ（Tech Stack）」\n\n
-この副業を成立させるために使用する、具体的かつすべて無料で始められるAI・デザインツールは以下の通りです。\n\n
-1. **文章・企画案の作成：ChatGPT (OpenAI) / Claude**\n
-   * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。\n
-2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**\n
-   * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。\n
-3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**\n
-   * 綺麗なテロップ（字幕）の自動挿入や、AIによる超リアルな日本語ナレーション（吹き替え）の作成を自動で行います。\n\n
----
-\n\n### 3. 未経験から収入を得るための「実践ステップ（3ステップ）」\n\n
-自宅から安全に最初の一歩を踏み出すための具体的な流れです。\n\n
-1. **AIツールを実際に触って「サンプル」を作ってみる**\n
-   まずは無料のAIツール（ChatGPTなど）を触り、ご自身で動画のサンプルを3〜5本作成してみます。AIの指示に慣れることが一番の近道です。\n
-2. **クラウドソーシングでの「お仕事獲得」**\n   「クラウドワークス」や「ココナラ」に登録し、作成したサンプルをアピールして、Webライター、ロゴ作成、動画編集などの案件に応募します。AIを使えば数分の一の時間で納品できるため、効率よく高い利益率を確保できます。\n
-3. **自社メディアでの「資産化」**\n   依頼を受けて稼ぐだけでなく、作成した電子書籍をAmazon Kindleで出版したり、作成したショート動画をTikTokに投稿して広告収入を狙うなど、将来的に自動で収入が入り続ける仕組みを構築します。\n\n
----
-\n\n### 4. 安全に稼ぐためのルールと確定申告のポイント\n\n
-副業を安全に楽しむために、必ず守るべき最重要事項です。\n\n
-* **「だれでも1クリックで100万円」といった怪しい広告は100%無視する**\n
-   本当に稼げるAI副業は、ツールを自分の手で操作してクライアントや読者の悩みを解決する "実務" です。高額なスクール勧誘や詐欺商材には一切耳を貸さず、まずは無料ツールを自分の手で動かすことから安全にスタートしましょう。\n
-* **副業収入が年間20万円を超えたら確定申告を行う**\n
-   副業での所得（年間収入から経費を引いた額）が年間20万円を超えた場合は、翌年に確定申告が必要になります。日々の帳簿づけや経費管理を徹底しておきましょう。\n\n
----
-\n\n### コウジのアドバイス\n\n
-新しいトレンドが登場したときは、ただ「面白いな」と眺めるだけでなく、「これをテーマに発信したら喜ぶ人がいるかな？」「どうやったら収入に繋がるかな？」と考えてみる癖をつけるのが、副業脳を育てる第一歩です。\n\n
-千里の道も一歩から。まずは小さな情報発信やライティングから、自宅で安全にチャレンジしてみませんか？あなたの第一歩を応援しています！`;
-
-  const dynamicImagePrompt = "A stunning and high-tech 3D render illustration representing the workspace theme of " + 
-    seedNameClean + ", cozy soft lighting, modern tablet display with colorful UI, highly detailed";
-
-  return {
-    title: title,
-    slug: safeSlug + '-' + Math.floor(Math.random() * 1000),
-    summary: summary,
-    content: markdownContent,
-    category: '副業ノウハウ',
-    tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
-    imagePrompt: dynamicImagePrompt
-  };
 }
