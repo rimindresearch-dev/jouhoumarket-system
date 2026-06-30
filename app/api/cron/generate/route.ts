@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     const targetTitle = queueData.title;
     const seed = Math.floor(Math.random() * 9999999);
 
-    // 2. 超具体的・事実ベースの記事執筆指示（JSONエラーを永久追放するデリミタ方式）
+    // 2. 超具体的・事実ベースの記事執筆指示（JSONエラーを永久追放するデリミタプレーンテキスト方式）
     const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
       `Your theme today is: "${targetTitle}". ` +
@@ -37,7 +37,7 @@ export async function GET(req: Request) {
       '[TITLE]\n' +
       `Generate the title. It must be exactly: "${targetTitle}"\n` +
       '[SLUG]\n' +
-      'Generate a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens.\n' +
+      'Generate a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens (e.g., "ai-video-shorts-50k", "fail-story-ai-hustle").\n' +
       '[SUMMARY]\n' +
       'Write a catchy 80-character summary.\n' +
       '[CATEGORY]\n' +
@@ -121,11 +121,13 @@ export async function GET(req: Request) {
       catId = newCategory.id;
     }
 
+    const parsedSummary = (blogData.summary || '').substring(0, 250);
+
     // 5. Supabaseへ記事データを保存
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: titleStr,
       slug: slugStr,
-      summary: summaryStr || (targetTitle + 'のロードマップを分かりやすく解説します。').substring(0, 240),
+      summary: parsedSummary || (targetTitle + 'のロードマップを分かりやすく解説します。').substring(0, 250),
       content: contentMatch[1].trim(),
       cover_image_url: coverUrl,
       category_id: catId,
