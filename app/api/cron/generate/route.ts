@@ -7,7 +7,7 @@ import { supabaseAdmin } from '../../../../lib/supabase';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// 【100%エラーフリー】大文字小文字の揺れも吸収し、文字の位置だけで完璧に中身を切り出す最高峰のパーサー関数
+// 文字コードやAIのブレを100%防ぎ、各セクションを安全に切り出すヘルパー関数
 function extractPart(text: string, tag: string): string {
   if (!text) return '';
   const tagUpper = `[${tag.toUpperCase()}]`;
@@ -16,7 +16,6 @@ function extractPart(text: string, tag: string): string {
 
   const start = index + tagUpper.length;
   
-  // 次に出現するタグを探して、そこまでの文字列を切り出す
   const nextTags = ['[TITLE]', '[SLUG]', '[SUMMARY]', '[CATEGORY]', '[TAGS]', '[IMAGE_PROMPT]', '[CONTENT]'];
   let end = text.length;
 
@@ -40,7 +39,7 @@ export async function GET(req: Request) {
 
     const seed = Math.floor(Math.random() * 9999999);
 
-    // 1. 予約リスト（title_queue）から一番古い未処理タイトルを1つ取得
+    // 1. 予約リスト（title_queue）から一番古い未処理タイトル（ひな型テーマ）を1つ取得
     const { data: queueData, error: queueError } = await supabaseAdmin
       .from('title_queue')
       .select('*')
@@ -52,17 +51,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, message: '予約リストが空のため、執筆を待機しました。' });
     }
 
-    const targetTitle = queueData.title;
+    const targetTitle = queueData.title; // 👈 これがひな型テーマ（例：バナー作成代行）になります
 
-    // 2. 超具体的・事実ベースの記事執筆指示（JSONエラーを永久追放するプレーンテキストデリミタ方式）
+    // 2. 4段階構成テンプレートのプロンプト（AI自身にタイトルとフックを自律的に考えさせます）
     const sysPrompt = 'Write a SEO blog format. Your output MUST NOT be JSON. Output raw plain text strictly with the following delimiters. Do not wrap in markdown code blocks. ' +
       'STRICT JOURNALISTIC RULES FOR KOJI: You are Koji, an expert Japanese side-hustle advisor. ' +
-      `Your theme today is: "${targetTitle}". ` +
-      'Your article content MUST strictly follow this exact 6-step structure in fluent Japanese (です・ます調):\n\n' +
+      'Your article content MUST strictly follow this exact 4-step structure in fluent Japanese (です・ます調):\n\n' +
       '[TITLE]\n' +
-      `Generate the title. It must be exactly: "${targetTitle}"\n` +
+      `Generate an extremely catchy, high-converting Japanese article title (like "スマホ1台でできる！ChatGPTを活用してバナー作成代行で毎月3万円を得る方法") based on the raw draft theme: "${targetTitle}". Do NOT use "${targetTitle}" literally; expand it into a masterpiece title.\n` +
       '[SLUG]\n' +
-      'Generate a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens (e.g., "ai-video-shorts-50k", "fail-story-ai-hustle").\n' +
+      'Generate a clean, URL-safe slug in English consisting ONLY of lowercase letters, numbers, and hyphens.\n' +
       '[SUMMARY]\n' +
       'Write a catchy 80-character summary.\n' +
       '[CATEGORY]\n' +
@@ -74,19 +72,15 @@ export async function GET(req: Request) {
       '[CONTENT]\n' +
       'Write the complete article body text (minimum 1000 words) using these exact Markdown headings. Write completely unique and valuable content for each section:\n' +
       '### 1. タイトル＆冒頭フック\n' +
-      '（具体的な数字や事実で引きつけ、誰のための記事かを明示）\n' +
+      '（あなたが上で考えた「新しい記事タイトル」に基づき、具体的な数字や事実で引きつけ、誰のための記事かを明示するフック文章を3行以内で執筆してください）\n' +
       '### 2. 問題提起・共感ゾーン\n' +
-      '（読者の悩みを代弁し、共感を呼び覚ます文章）\n' +
+      '（読者が抱えている悩みをそのまま言語化。「わかってる!」と思わせる共感の文章）\n' +
       '### 3. 結論を先出し\n' +
-      '（この記事でわかることを3〜5個の箇条書きで明示）\n' +
-      '### 4. 本文：ステップ・体験談\n' +
-      '（具体的な手順、ロードマップ、および使用するリアルなツール名：ChatGPT, CapCut, Suno, Midjourney, Vrew などを詳しく解説）\n' +
-      '### 5. 注意点・失敗パターン\n' +
-      '（よくある失敗理由と対策を書いて信頼度アップ）\n' +
-      '### 6. まとめ＆次のアクション\n' +
-      '（要点の整理と一歩目を促すまとめ）';
+      '（この記事でわかることを3〜5個の箇条書きで明示し、読む理由を渡す文章）\n' +
+      '### 4. 本文：ステップ or 比較 or 体験談\n' +
+      '（副業・新しいやり方の「ステップ形式」または「やってみた形式」で、具体的な手順、画像・スクショの説明、使用するリアルなツール名：ChatGPT, CapCut, Suno, Midjourney, Vrew などを詳しく解説する文章）';
 
-    const userPrompt = `Please write the absolute best masterpiece article for the title: "${targetTitle}" using the 6-step plain-text delimiter template.`;
+    const userPrompt = `Please brainstorm a great article title and write the complete masterpiece article based on the draft theme: "${targetTitle}" using the 4-step template.`;
 
     const aiText = await fetch('https://text.pollinations.ai/', {
       method: 'POST',
@@ -101,7 +95,7 @@ export async function GET(req: Request) {
     const rawText = await aiText.text();
     
     // 自作の安全抽出関数（extractPart）でバグなく正確に切り出し
-    const titleStr = extractPart(rawText, 'TITLE') || targetTitle;
+    const titleStr = extractPart(rawText, 'TITLE') || targetTitle; // AIが考えたタイトルを適用（なければひな型をフォールバック）
     let slugStr = (extractPart(rawText, 'SLUG') || 'article-' + seed).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
     slugStr = slugStr.substring(0, 150) || 'article-' + seed;
 
@@ -139,11 +133,11 @@ export async function GET(req: Request) {
       catId = newCategory.id;
     }
 
-    // 5. Supabaseへ記事データを保存
+    // 5. Supabaseへ記事データを保存（AIが考えた綺麗なタイトル titleStr で保存します）
     const { data: newPost, error: postError } = await supabaseAdmin.from('posts').insert({
       title: titleStr,
       slug: slugStr,
-      summary: summaryStr || (targetTitle + 'のロードマップを分かりやすく解説します。').substring(0, 240),
+      summary: summaryStr || (titleStr + 'のロードマップを分かりやすく解説します。').substring(0, 240),
       content: contentStr,
       cover_image_url: coverUrl,
       category_id: catId,
@@ -159,7 +153,7 @@ export async function GET(req: Request) {
       const parsedTags = rawTags.split(',').map(t => t.trim()).filter(Boolean);
       await Promise.all(parsedTags.map(async (t: string) => {
         if (!t) return;
-        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')) || 'tag-' + Math.floor(Math.random() * 1000);
+        const tSlug = encodeURIComponent(t.toLowerCase().replace(/[\s\t\r\n\\\/'"]/g, '-').replace(/(^-|-$)/g, '')).substring(0, 200) || 'tag-' + Math.floor(Math.random() * 1000);
         let tId: string;
         const { data: extTag } = await supabaseAdmin.from('tags').select('id').eq('slug', tSlug).limit(1).maybeSingle();
         if (extTag) {
@@ -177,7 +171,7 @@ export async function GET(req: Request) {
     // 7. 処理が終わったタイトルを予約リストから自動削除
     await supabaseAdmin.from('title_queue').delete().eq('id', queueData.id);
 
-    return NextResponse.json({ success: true, title: targetTitle });
+    return NextResponse.json({ success: true, title: titleStr });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
@@ -200,7 +194,7 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
 \n\n### 2. 稼ぐために必要な「ツールの組み合わせ（Tech Stack）」\n\n
 この副業を成立させるために使用する、具体的かつすべて無料で始められるAI・デザインツールは以下の通りです。\n\n
 1. **文章・企画案の作成：ChatGPT (OpenAI) / Claude**\n
-   * お仕事の台本テキストや、全体の構成案、キャッチコピー of 自動作成など「言語化」のすべてを担当します。\n
+   * お仕事の台本テキストや、全体の構成案、キャッチコピーの自動作成など「言語化」のすべてを担当します。\n
 2. **デザイン・イラスト生成：Canva / Midjourney / DALL-E 3**\n
    * 書籍の表紙デザイン、動画用のイラスト素材、おしゃれなバナー画像を数秒で最高品質に生成します。\n
 3. **動画・音声の編集：CapCut / Vrew / ElevenLabs**\n
@@ -232,7 +226,7 @@ function generateFallbackPayload(seedCategory: string, seedNameClean: string) {
     slug: safeSlug + '-' + Math.floor(Math.random() * 1000),
     summary: summary,
     content: markdownContent,
-    category: '副業ノウハウ', // 👈 selectedTopic.category を排除してバグを完全に修正！
+    category: '副業ノウハウ',
     tags: [seedNameClean, 'AI副業', '在宅ワーク', '初心者向け', 'コウジの解説'],
     imagePrompt: dynamicImagePrompt
   };
